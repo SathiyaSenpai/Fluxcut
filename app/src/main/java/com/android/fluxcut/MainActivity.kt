@@ -66,6 +66,8 @@ data class Project(
     val thumbnailColor: Color
 )
 
+data class EditorArgs(val project: Project)
+
 // MainActivity
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -74,6 +76,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             FluxcutTheme {
                 var currentScreen by remember { mutableStateOf("home") }
+                var editorProject by remember { mutableStateOf<Project?>(null) }
 
                 BackHandler(enabled = currentScreen != "home") {
                     currentScreen = "home"
@@ -92,7 +95,19 @@ class MainActivity : ComponentActivity() {
                         onSettingsClick = { currentScreen = "settings" },
                         onCreateProjectClick = { currentScreen = "create_project" },
                         onCaptureClick = { currentScreen = "capture" },
-                        onDocsClick = { currentScreen = "docs" }
+                        onDocsClick = { currentScreen = "docs" },
+                        onProjectClick = { project ->
+                            editorProject = project
+                            currentScreen = "editor"
+                        },
+                        onEditorClick = {
+                            if (projectList.isNotEmpty()) {
+                                editorProject = projectList.first()
+                                currentScreen = "editor"
+                            } else {
+                                currentScreen = "create_project"
+                            }
+                        }
                     )
                     "capture" -> CaptureScreen(
                         onBackClick = { currentScreen = "home" }
@@ -104,12 +119,19 @@ class MainActivity : ComponentActivity() {
                         onBackClick = { currentScreen = "home" },
                         onProjectCreated = { newProject ->
                             projectList.add(0, newProject)
-                            currentScreen = "home"
+                            editorProject = newProject
+                            currentScreen = "editor"
                         }
                     )
                     "settings" -> SettingsScreen(
                         onBackClick = { currentScreen = "home" }
                     )
+                    "editor" -> editorProject?.let { project ->
+                        EditorScreen(
+                            project = project,
+                            onBackClick = { currentScreen = "home" }
+                        )
+                    }
                 }
             }
         }
@@ -123,7 +145,9 @@ fun HomeScreen(
     onSettingsClick: () -> Unit,
     onCreateProjectClick: () -> Unit,
     onCaptureClick: () -> Unit,
-    onDocsClick: () -> Unit
+    onDocsClick: () -> Unit,
+    onProjectClick: (Project) -> Unit,
+    onEditorClick: () -> Unit
 ) {
 
     val context = LocalContext.current
@@ -148,7 +172,12 @@ fun HomeScreen(
     Scaffold(
         containerColor = bg,
         bottomBar = {
-            BottomNavBar(navBg = navBg, onSurface = onSurface, accent = accent)
+            BottomNavBar(
+                navBg = navBg,
+                onSurface = onSurface,
+                accent = accent,
+                onEditorClick = onEditorClick
+            )
         }
     ) { padding ->
         LazyColumn(
@@ -226,7 +255,14 @@ fun HomeScreen(
             }
 
             items(projects) { project ->
-                ProjectCard(project = project, surface = surface, onSurface = onSurface, subtle = subtle, accent = accent)
+                ProjectCard(
+                    project = project,
+                    surface = surface,
+                    onSurface = onSurface,
+                    subtle = subtle,
+                    accent = accent,
+                    onClick = { onProjectClick(project) }
+                )
             }
 
             item {
@@ -563,14 +599,15 @@ fun ProjectCard(
     surface: Color,
     onSurface: Color,
     subtle: Color,
-    accent: Color
+    accent: Color,
+    onClick: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(surface)
-            .clickable { }
+            .clickable { onClick() }
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -618,7 +655,7 @@ fun ProjectCard(
 }
 
 @Composable
-fun BottomNavBar(navBg: Color, onSurface: Color, accent: Color) {
+fun BottomNavBar(navBg: Color, onSurface: Color, accent: Color, onEditorClick: () -> Unit = {}) {
     Surface(
         color = navBg,
         shadowElevation = 8.dp
@@ -646,7 +683,8 @@ fun BottomNavBar(navBg: Color, onSurface: Color, accent: Color) {
                 modifier = Modifier
                     .size(48.dp)
                     .clip(CircleShape)
-                    .background(accent),
+                    .background(accent)
+                    .clickable { onEditorClick() },
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
@@ -782,17 +820,17 @@ fun CreateProjectScreen(onBackClick: () -> Unit, onProjectCreated: (Project) -> 
     val funnyPlaceholders = remember {
         listOf(
             "Untitled Masterpiece",
-            "My Viral Hit",
-            "Directorial Debut",
+            "Delete Me Later",
+            "Low Budget Blockbuster",
             "Oscar Winner 2026",
             "Cat Video #42",
             "Epic Montage",
-            "Definitely Not A Virus",
+            "Client Wants Changes",
             "Hollywood Budget $0",
             "Coffee Powered Edit",
             "Clickbait Thumbnail",
-            "Random Shuffler",
-            "B-Roll Heaven"
+            "Final_Final_v2_Real",
+            "This One Is Final"
         )
     }
     val defaultPlaceholder = remember { funnyPlaceholders.random() }
@@ -1273,3 +1311,4 @@ fun DocSectionCard(surface: Color, content: @Composable () -> Unit) {
         content()
     }
 }
+
