@@ -11,6 +11,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,6 +20,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -33,13 +37,22 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.android.fluxcut.ui.theme.FluxcutTheme
 import kotlin.random.Random
+import androidx.compose.foundation.border
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.viewinterop.AndroidView
+import android.Manifest
+import androidx.activity.compose.BackHandler
 
 // Data
 data class Project(
@@ -53,15 +66,6 @@ data class Project(
     val thumbnailColor: Color
 )
 
-val sampleProjects = listOf(
-    Project(1, "Raw B-Roll: Mettupalayam", "May 20, 2026", "08:00", "1080p", "9:16", 30, Color(0xFF4A5568)),
-    Project(2, "Vlog_Ep.21: The Trip", "May 18, 2026", "12:30", "4K", "16:9", 24, Color(0xFF2D3748)),
-    Project(3, "Drone Cinematic", "May 15, 2026", "04:15", "4K", "16:9", 30, Color(0xFF1A365D)),
-    Project(4, "Brand Promo 2024", "May 10, 2026", "01:45", "4K", "16:9", 30, Color(0xFF1C1C2E))
-)
-
-val Inter = FontFamily.SansSerif
-
 // MainActivity
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -70,6 +74,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             FluxcutTheme {
                 var currentScreen by remember { mutableStateOf("home") }
+
+                BackHandler(enabled = currentScreen != "home") {
+                    currentScreen = "home"
+                }
 
                 val projectList = remember {
                     mutableStateListOf(
@@ -82,9 +90,14 @@ class MainActivity : ComponentActivity() {
                     "home" -> HomeScreen(
                         projects = projectList,
                         onSettingsClick = { currentScreen = "settings" },
-                        onCreateProjectClick = { currentScreen = "create_project" }
+                        onCreateProjectClick = { currentScreen = "create_project" },
+                        onCaptureClick = { currentScreen = "capture" },
+                        onDocsClick = { currentScreen = "docs" }
                     )
-                    "settings" -> SettingsScreen(
+                    "capture" -> CaptureScreen(
+                        onBackClick = { currentScreen = "home" }
+                    )
+                    "docs" -> DocsScreen(
                         onBackClick = { currentScreen = "home" }
                     )
                     "create_project" -> CreateProjectScreen(
@@ -94,6 +107,9 @@ class MainActivity : ComponentActivity() {
                             currentScreen = "home"
                         }
                     )
+                    "settings" -> SettingsScreen(
+                        onBackClick = { currentScreen = "home" }
+                    )
                 }
             }
         }
@@ -102,7 +118,24 @@ class MainActivity : ComponentActivity() {
 
 // Home Screen
 @Composable
-fun HomeScreen(projects: List<Project>, onSettingsClick: () -> Unit, onCreateProjectClick: () -> Unit) {
+fun HomeScreen(
+    projects: List<Project>,
+    onSettingsClick: () -> Unit,
+    onCreateProjectClick: () -> Unit,
+    onCaptureClick: () -> Unit,
+    onDocsClick: () -> Unit
+) {
+
+    val context = LocalContext.current
+
+    // live storage size state
+    var cacheSizeState by remember { mutableStateOf("Calculating...") }
+
+    // Read the size on screen launch
+    LaunchedEffect(Unit) {
+        cacheSizeState = CacheManager.getCacheSize(context)
+    }
+
     val dark = isSystemInDarkTheme()
 
     val bg = if (dark) Color(0xFF0A0A0F) else Color(0xFFF5F5F7)
@@ -142,9 +175,29 @@ fun HomeScreen(projects: List<Project>, onSettingsClick: () -> Unit, onCreatePro
             item {
                 QuickActionsRow(
                     surface = surface,
-                    subtle = subtle,
                     accent = accent,
-                    onSurface = onSurface
+                    onSurface = onSurface,
+                    subtle = subtle,
+                    onCaptureClick = onCaptureClick,
+                    onClearCacheClick = {
+                        val cleared = CacheManager.clearAllCache(context)
+                        if (cleared) {
+                            cacheSizeState = CacheManager.getCacheSize(context)
+                            Toast.makeText(context, "Storage cleared", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(context, "Failed to clear some files", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onDocsClick = onDocsClick
+                )
+            }
+
+            item {
+                Text(
+                    text = "Temporary Cache: $cacheSizeState",
+                    fontSize = 12.sp,
+                    color = subtle,
+                    modifier = Modifier.padding(horizontal = 4.dp)
                 )
             }
 
@@ -420,12 +473,23 @@ fun NewProjectCard(accent: Color, dark: Boolean, onCreateClick: () -> Unit) {
 data class QuickAction(val icon: ImageVector, val label: String, val badge: String? = null)
 
 @Composable
-fun QuickActionsRow(surface: Color, onSurface: Color, subtle: Color, accent: Color) {
+fun QuickActionsRow(
+    surface: Color,
+    onSurface: Color,
+    subtle: Color,
+    accent: Color,
+    onCaptureClick: () -> Unit,
+    onClearCacheClick: () -> Unit,
+    onDocsClick: () -> Unit
+) {
+    val context = LocalContext.current
+    val cacheSize = remember { mutableStateOf(CacheManager.getCacheSize(context)) }
+
     val actions = listOf(
         QuickAction(Icons.Outlined.EmergencyRecording, "Capture"),
         QuickAction(Icons.Outlined.MusicNote, "Extract Audio"),
-        QuickAction(Icons.Outlined.DeleteSweep, "Clear Cache", "3.2G"),
-        QuickAction(Icons.Outlined.MenuBook, "Docs"),
+        QuickAction(Icons.Outlined.DeleteSweep, "Clear Cache", cacheSize.value),
+        QuickAction(Icons.AutoMirrored.Outlined.MenuBook, "Docs"),
     )
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -439,7 +503,16 @@ fun QuickActionsRow(surface: Color, onSurface: Color, subtle: Color, accent: Col
                         .height(76.dp)
                         .clip(RoundedCornerShape(14.dp))
                         .background(surface)
-                        .clickable { }
+                        .clickable {
+                            when (action.label) {
+                                "Capture" -> onCaptureClick()
+                                "Clear Cache" -> {
+                                    onClearCacheClick()
+                                    cacheSize.value = CacheManager.getCacheSize(context)
+                                }
+                                "Docs" -> onDocsClick()
+                            }
+                        }
                         .padding(horizontal = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
@@ -624,7 +697,7 @@ fun SettingsScreen(onBackClick: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.ArrowBack,
+                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                     contentDescription = "Go Back",
                     tint = onSurface,
                     modifier = Modifier
@@ -685,6 +758,17 @@ fun SettingsScreen(onBackClick: () -> Unit) {
     }
 }
 
+data class AspectRatioPreset(val ratio: String, val label: String, val width: Float, val height: Float)
+
+val ratioPresets = listOf(
+    AspectRatioPreset("16:9", "YouTube", 16f, 9f),
+    AspectRatioPreset("9:16", "Shorts", 9f, 16f),
+    AspectRatioPreset("1:1", "Square", 1f, 1f),
+    AspectRatioPreset("4:5", "Insta Feed", 4f, 5f),
+    AspectRatioPreset("21:9", "Cinema", 21f, 9f),
+    AspectRatioPreset("4:3", "Standard", 4f, 3f),
+    AspectRatioPreset("Custom", "Free", 0f, 0f) // 0f triggers the custom icon logic
+)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateProjectScreen(onBackClick: () -> Unit, onProjectCreated: (Project) -> Unit) {
@@ -695,9 +779,27 @@ fun CreateProjectScreen(onBackClick: () -> Unit, onProjectCreated: (Project) -> 
     val subtle = if (dark) Color(0xFF888888) else Color(0xFF888888)
     val accent = Color(0xFF6C63FF)
 
+    val funnyPlaceholders = remember {
+        listOf(
+            "Untitled Masterpiece",
+            "My Viral Hit",
+            "Directorial Debut",
+            "Oscar Winner 2026",
+            "Cat Video #42",
+            "Epic Montage",
+            "Definitely Not A Virus",
+            "Hollywood Budget $0",
+            "Coffee Powered Edit",
+            "Clickbait Thumbnail",
+            "Random Shuffler",
+            "B-Roll Heaven"
+        )
+    }
+    val defaultPlaceholder = remember { funnyPlaceholders.random() }
+
     var nameInput by remember { mutableStateOf("") }
     var selectedRatio by remember { mutableStateOf("9:16") }
-    var selectedFps by remember { mutableStateOf(30) }
+    var selectedFps by remember { mutableIntStateOf(30) }
     var selectedResolution by remember { mutableStateOf("1080p") }
 
     Scaffold(
@@ -713,7 +815,7 @@ fun CreateProjectScreen(onBackClick: () -> Unit, onProjectCreated: (Project) -> 
 
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Outlined.ArrowBack,
+                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                     contentDescription = "Cancel",
                     tint = onSurface,
                     modifier = Modifier.size(24.dp).clickable { onBackClick() }
@@ -729,7 +831,7 @@ fun CreateProjectScreen(onBackClick: () -> Unit, onProjectCreated: (Project) -> 
             OutlinedTextField(
                 value = nameInput,
                 onValueChange = { nameInput = it },
-                placeholder = { Text("Project_${System.currentTimeMillis() % 100000}", color = subtle) },
+                placeholder = { Text(defaultPlaceholder, color = subtle) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(
@@ -743,42 +845,72 @@ fun CreateProjectScreen(onBackClick: () -> Unit, onProjectCreated: (Project) -> 
 
             Spacer(Modifier.height(24.dp))
 
-            Text("Canvas Aspect Ratio", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = subtle)
+            Text("Aspect Ratio", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = subtle)
             Spacer(Modifier.height(8.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                val ratios = listOf("9:16", "16:9", "1:1")
-                ratios.forEach { ratio ->
-                    val isSelected = selectedRatio == ratio
-                    Box(
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(ratioPresets) { preset ->
+                    val isSelected = selectedRatio == preset.ratio
+                    val cardBg = if (isSelected) accent.copy(alpha = 0.15f) else surface
+                    val borderColor = if (isSelected) accent else Color.Transparent
+
+                    Column(
                         modifier = Modifier
-                            .weight(1f)
-                            .height(64.dp)
+                            .width(88.dp) // Fixed width keeps the list perfectly uniform
                             .clip(RoundedCornerShape(12.dp))
-                            .background(if (isSelected) accent else surface)
-                            .clickable { selectedRatio = ratio },
-                        contentAlignment = Alignment.Center
+                            .background(cardBg)
+                            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+                            .clickable { selectedRatio = preset.ratio }
+                            .padding(vertical = 14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(
-                            text = ratio,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isSelected) Color.White else onSurface
-                        )
+                        // The visual representation container
+                        Box(
+                            modifier = Modifier
+                                .height(28.dp) // Locks the height so tall and wide boxes align on center
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (preset.width == 0f) {
+                                // Draw an edit icon for the "Custom" option
+                                Icon(Icons.Outlined.Edit, contentDescription = "Custom", tint = if (isSelected) accent else subtle, modifier = Modifier.size(20.dp))
+                            } else {
+                                // Draw the exact aspect ratio mathematically
+                                Box(
+                                    modifier = Modifier
+                                        .aspectRatio(preset.width / preset.height, matchHeightConstraintsFirst = true)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .border(1.5.dp, if (isSelected) accent else subtle, RoundedCornerShape(4.dp))
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+                        Text(preset.label, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = if (isSelected) accent else onSurface, maxLines = 1)
+                        Spacer(Modifier.height(2.dp))
+                        Text(preset.ratio, fontSize = 10.sp, color = subtle)
                     }
                 }
             }
 
             Spacer(Modifier.height(24.dp))
 
+            // Input: Frame Rate Selection Controls
             Text("Target Frame Rate", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = subtle)
             Spacer(Modifier.height(8.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                val fpsOptions = listOf(24, 30, 60)
-                fpsOptions.forEach { fps ->
+
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                val fpsOptions = listOf(24, 30, 60, 120) // 120 FPS integrated
+                items(fpsOptions) { fps ->
                     val isSelected = selectedFps == fps
                     Box(
                         modifier = Modifier
-                            .weight(1f)
+                            .width(72.dp)
                             .height(50.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .background(if (isSelected) accent else surface)
@@ -794,7 +926,7 @@ fun CreateProjectScreen(onBackClick: () -> Unit, onProjectCreated: (Project) -> 
 
             Button(
                 onClick = {
-                    val finalName = if (nameInput.trim().isEmpty()) "Project_${System.currentTimeMillis() % 100000}" else nameInput
+                    val finalName = if (nameInput.trim().isEmpty()) defaultPlaceholder else nameInput
                     val newProjectInstance = Project(
                         id = Random.nextInt(100, 100000),
                         title = finalName,
@@ -814,5 +946,330 @@ fun CreateProjectScreen(onBackClick: () -> Unit, onProjectCreated: (Project) -> 
                 Text("Initialize Timeline", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
             }
         }
+    }
+}
+
+// ── Capture Screen (CameraX Integration) ──────────────────────────────────────
+
+@Composable
+fun CaptureScreen(onBackClick: () -> Unit) {
+    val context = LocalContext.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    var hasPermissions by remember { mutableStateOf(false) }
+    var isRecording by remember { mutableStateOf(false) }
+
+    var recordedTime by remember { mutableStateOf("00:00") }
+    var zoomRatio by remember { mutableFloatStateOf(1f) }
+    var cameraControl by remember { mutableStateOf<androidx.camera.core.CameraControl?>(null) }
+
+    val videoCaptureState = remember { mutableStateOf<androidx.camera.video.VideoCapture<androidx.camera.video.Recorder>?>(null) }
+    val activeRecordingState = remember { mutableStateOf<androidx.camera.video.Recording?>(null) }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+        onResult = { permissions ->
+            hasPermissions = permissions[android.Manifest.permission.CAMERA] == true &&
+                    permissions[android.Manifest.permission.RECORD_AUDIO] == true
+        }
+    )
+
+    LaunchedEffect(Unit) {
+        permissionLauncher.launch(
+            arrayOf(android.Manifest.permission.CAMERA, android.Manifest.permission.RECORD_AUDIO)
+        )
+    }
+
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        if (hasPermissions) {
+            AndroidView(
+                factory = { ctx ->
+                    val previewView = androidx.camera.view.PreviewView(ctx)
+                    val cameraProviderFuture = androidx.camera.lifecycle.ProcessCameraProvider.getInstance(ctx)
+
+                    cameraProviderFuture.addListener({
+                        val cameraProvider = cameraProviderFuture.get()
+
+                        val preview = androidx.camera.core.Preview.Builder().build().also {
+                            it.setSurfaceProvider(previewView.surfaceProvider)
+                        }
+
+                        val recorder = androidx.camera.video.Recorder.Builder()
+                            .setQualitySelector(androidx.camera.video.QualitySelector.from(androidx.camera.video.Quality.HIGHEST))
+                            .build()
+                        val videoCapture = androidx.camera.video.VideoCapture.withOutput(recorder)
+                        videoCaptureState.value = videoCapture
+
+                        val cameraSelector = androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA
+
+                        try {
+                            cameraProvider.unbindAll()
+                            val camera = cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview, videoCapture)
+
+                            cameraControl = camera.cameraControl
+                        } catch (exc: Exception) {
+                            android.util.Log.e("FluxCutCamera", "Use case binding failed", exc)
+                        }
+                    }, androidx.core.content.ContextCompat.getMainExecutor(ctx))
+
+                    previewView
+                },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, _, zoomMultiplier, _ ->
+                            zoomRatio = (zoomRatio * zoomMultiplier).coerceIn(1f, 5f)
+                            cameraControl?.setZoomRatio(zoomRatio)
+                        }
+                    }
+            )
+
+            // Top UI Row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+                    .padding(top = 48.dp, start = 20.dp, end = 20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Close,
+                    contentDescription = "Close Camera",
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp).clickable { onBackClick() }
+                )
+
+                if (isRecording) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp)).padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color.Red))
+                        Spacer(Modifier.width(8.dp))
+                        Text(recordedTime, color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // Empty spacer to balance the row layout
+                Spacer(modifier = Modifier.size(28.dp))
+            }
+
+            // Record Button Logic
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 60.dp)
+                    .size(72.dp)
+                    .clip(CircleShape)
+                    .border(4.dp, Color.White, CircleShape)
+                    .padding(8.dp)
+                    .clip(CircleShape)
+                    .background(if (isRecording) Color.DarkGray else Color.Red)
+                    .clickable {
+                        val videoCapture = videoCaptureState.value ?: return@clickable
+                        val currentRecording = activeRecordingState.value
+
+                        if (currentRecording != null) {
+                            currentRecording.stop()
+                            activeRecordingState.value = null
+                            isRecording = false
+                            recordedTime = "00:00" // Reset timer
+                        } else {
+                            val name = "FluxCut_${System.currentTimeMillis()}.mp4"
+                            val file = java.io.File(context.filesDir, name)
+                            val outputOptions = androidx.camera.video.FileOutputOptions.Builder(file).build()
+
+                            if (androidx.core.app.ActivityCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                activeRecordingState.value = videoCapture.output
+                                    .prepareRecording(context, outputOptions)
+                                    .withAudioEnabled()
+                                    .start(androidx.core.content.ContextCompat.getMainExecutor(context)) { event ->
+                                        when (event) {
+                                            is androidx.camera.video.VideoRecordEvent.Start -> isRecording = true
+
+                                            is androidx.camera.video.VideoRecordEvent.Status -> {
+                                                val durationNanos = event.recordingStats.recordedDurationNanos
+                                                val seconds = java.util.concurrent.TimeUnit.NANOSECONDS.toSeconds(durationNanos)
+                                                val mins = seconds / 60
+                                                val secs = seconds % 66
+                                                recordedTime = String.format("%02d:%02d", mins, secs)
+                                            }
+
+                                            is androidx.camera.video.VideoRecordEvent.Finalize -> {
+                                                isRecording = false
+                                                recordedTime = "00:00"
+                                                if (!event.hasError()) {
+                                                    android.widget.Toast.makeText(context, "Saved to App Files", android.widget.Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    activeRecordingState.value?.close()
+                                                    activeRecordingState.value = null
+                                                }
+                                            }
+                                        }
+                                    }
+                            }
+                        }
+                    }
+            )
+        } else {
+            // Permission fallback UI
+            Column(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(Icons.Outlined.VideocamOff, contentDescription = null, tint = Color.White, modifier = Modifier.size(48.dp))
+                Spacer(Modifier.height(16.dp))
+                Text("Camera & Mic permissions required", color = Color.White)
+                Spacer(Modifier.height(16.dp))
+                Button(onClick = { onBackClick() }, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C63FF))) {
+                    Text("Go Back")
+                }
+            }
+        }
+    }
+}
+
+// ── Documentation Screen ──────────────────────────────────────────────────────
+
+@Composable
+fun DocsScreen(onBackClick: () -> Unit) {
+    val dark = isSystemInDarkTheme()
+    val bg = if (dark) Color(0xFF0A0A0F) else Color(0xFFF5F5F7)
+    val surface = if (dark) Color(0xFF1A1A2E) else Color(0xFFFFFFFF)
+    val onSurface = if (dark) Color(0xFFEEEEEE) else Color(0xFF111111)
+    val subtle = if (dark) Color(0xFF888888) else Color(0xFF888888)
+    val accent = Color(0xFF6C63FF)
+
+    Scaffold(
+        containerColor = bg
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            Spacer(Modifier.height(12.dp))
+
+            // Navigation Bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.ArrowBack,
+                    contentDescription = "Go Back",
+                    tint = onSurface,
+                    modifier = Modifier.size(24.dp).clickable { onBackClick() }
+                )
+                Spacer(Modifier.width(16.dp))
+                Text(
+                    text = "FluxCut Manual",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = onSurface
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            // Scrollable Content
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+
+                // Section 1: Core Engine
+                item {
+                    DocSectionCard(surface = surface) {
+                        Text("1. The Timeline Engine", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = accent)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "FluxCut uses a strict rendering pipeline. When you initialize a project, the target Frame Rate (FPS) and Aspect Ratio are locked. Media imported into the timeline will automatically scale and resample to match these project constraints to prevent dropped frames during export.",
+                            fontSize = 13.sp,
+                            color = onSurface,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+
+                // Section 2: Quick Actions
+                item {
+                    DocSectionCard(surface = surface) {
+                        Text("2. Quick Action Utilities", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = accent)
+                        Spacer(Modifier.height(12.dp))
+
+                        Text("Capture", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = onSurface)
+                        Text(
+                            "Bypasses the system camera and records hardware-encoded .mp4 files directly into the app's internal storage block. This prevents gallery clutter and speeds up import times.",
+                            fontSize = 13.sp, color = subtle, lineHeight = 18.sp
+                        )
+                        Spacer(Modifier.height(12.dp))
+
+                        Text("Extract Audio", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = onSurface)
+                        Text(
+                            "A fast demuxing tool. It separates the audio track from a selected video container without re-encoding, saving it as a standalone asset for voiceovers or background tracks.",
+                            fontSize = 13.sp, color = subtle, lineHeight = 18.sp
+                        )
+                        Spacer(Modifier.height(12.dp))
+
+                        Text("Clear Cache", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = onSurface)
+                        Text(
+                            "Deletes temporary preview frames and proxy files generated during editing. Running this will not delete your project files or saved timeline configurations.",
+                            fontSize = 13.sp, color = subtle, lineHeight = 18.sp
+                        )
+                    }
+                }
+
+                // Section 3: Privacy & Storage
+                item {
+                    DocSectionCard(surface = surface) {
+                        Text("3. Storage & Privacy", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = accent)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "FluxCut operates as an offline-first tool. All project databases, media files, and rendering processes happen locally on your device hardware. No telemetry or video data is transmitted to remote servers.",
+                            fontSize = 13.sp,
+                            color = onSurface,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+
+                // Section 4: FOSS License
+                item {
+                    DocSectionCard(surface = surface) {
+                        Text("4. Open Source Licensing", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = accent)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "This software is distributed under the GNU General Public License v3.0. You are free to inspect, modify, and distribute the source code. Pull requests for bug fixes and feature expansions are handled via the official GitHub repository.",
+                            fontSize = 13.sp,
+                            color = onSurface,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
+
+                // Bottom padding
+                item { Spacer(Modifier.height(32.dp)) }
+            }
+        }
+    }
+}
+
+// Helper composable to maintain clean layout formatting for the text blocks
+@Composable
+fun DocSectionCard(surface: Color, content: @Composable () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(surface)
+            .padding(16.dp)
+    ) {
+        content()
     }
 }

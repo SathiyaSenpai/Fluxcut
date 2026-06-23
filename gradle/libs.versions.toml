@@ -1,19 +1,21 @@
 [versions]
 agp = "9.2.1"
-coreKtx = "1.16.0"
+coreKtx = "1.19.0"
 ffmpegKitFull = "6.0-2"
+ffmpegKitX6kb = "6.1.1"
 junit = "4.13.2"
-junitVersion = "1.2.1"
-espressoCore = "3.6.1"
-lifecycleRuntimeKtx = "2.9.1"
-activityCompose = "1.10.1"
-kotlin = "2.2.10"
-composeBom = "2026.02.01"
-room = "2.6.1"
+junitVersion = "1.3.0"
+espressoCore = "3.7.0"
+lifecycleRuntimeKtx = "2.11.0"
+activityCompose = "1.13.0"
+kotlin = "2.4.0"
+composeBom = "2026.06.00"
+room = "2.8.4"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 ffmpeg-kit-full = { group = "com.github.arthenica.ffmpeg-kit", name = "ffmpeg-kit-full", version.ref = "ffmpegKitFull" }
+ffmpeg-kit-x6kb = { module = "com.moizhassan.ffmpeg:ffmpeg-kit-16kb", version.ref = "ffmpegKitX6kb" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
