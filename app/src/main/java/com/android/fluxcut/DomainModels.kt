@@ -19,6 +19,8 @@ data class Project(
     val aspectRatio:    String,
     val fps:            Int,
     val thumbnailColor: Color,
+    val thumbnailUri:   String? = null,
+    val thumbnailMimeType: String? = null,
     val lastModified:   Long = System.currentTimeMillis()
 )
 

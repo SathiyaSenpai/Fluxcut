@@ -49,6 +49,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -56,7 +57,12 @@ import androidx.compose.foundation.Image
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
 import com.android.fluxcut.ui.theme.FluxcutTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
+import android.net.Uri
 import java.util.Locale
 import kotlin.random.Random
 
@@ -151,7 +157,7 @@ class MainActivity : ComponentActivity() {
                                     onSettingsClick      = { navigateTo("settings") },
                                     onCreateProjectClick = { navigateTo("create_project") },
                                     onCaptureClick       = { navigateTo("capture") },
-                                    onExtractAudioClick  = { 
+                                    onExtractAudioClick  = {
                                         audioExtractLauncher.launch(
                                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
                                         )
@@ -163,6 +169,17 @@ class MainActivity : ComponentActivity() {
                                     onViewAllClick       = { navigateTo("all_projects") },
                                     onDeleteProject      = { project ->
                                         scope.launch { repository.delete(project) }
+                                    },
+                                    onRenameProject      = { project, newTitle ->
+                                        scope.launch {
+                                            repository.save(project.copy(title = newTitle, lastModified = System.currentTimeMillis()))
+                                        }
+                                    },
+                                    onDuplicateProject   = { project ->
+                                        scope.launch {
+                                            repository.duplicate(project)
+                                            Toast.makeText(context, "Project duplicated", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 )
                                 "profile"        -> ProfileScreen(
@@ -179,6 +196,17 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onDeleteProject = { project ->
                                         scope.launch { repository.delete(project) }
+                                    },
+                                    onRenameProject = { project, newTitle ->
+                                        scope.launch {
+                                            repository.save(project.copy(title = newTitle, lastModified = System.currentTimeMillis()))
+                                        }
+                                    },
+                                    onDuplicateProject = { project ->
+                                        scope.launch {
+                                            repository.duplicate(project)
+                                            Toast.makeText(context, "Project duplicated", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 )
                                 "create_project" -> CreateProjectScreen(
@@ -195,7 +223,7 @@ class MainActivity : ComponentActivity() {
                                         prev == "create_project"
                                     }
                                     EditorScreen(
-                                        args = EditorArgs(project, autoOpen), 
+                                        args = EditorArgs(project, autoOpen),
                                         onBack = { navigateBack() }
                                     )
                                 }
@@ -215,14 +243,14 @@ class MainActivity : ComponentActivity() {
                                                 fps = 30,
                                                 thumbnailColor = Color(0xFF6C63FF)
                                             )
-                                            
+
                                             val newClip = media.toTimelineClip(
                                                 id = 1,
                                                 startMs = 0L,
                                                 videoColor = accent,
                                                 audioColor = Color(0xFF34D399)
                                             )
-                                            
+
                                             repository.saveTimeline(newProject, listOf(newClip))
                                             editorProject = newProject
                                             navigateTo("editor")
@@ -249,9 +277,12 @@ class MainActivity : ComponentActivity() {
         onDocsClick: () -> Unit,
         onProjectClick: (Project) -> Unit,
         onViewAllClick: () -> Unit,
-        onDeleteProject: (Project) -> Unit
+        onDeleteProject: (Project) -> Unit,
+        onRenameProject: (Project, String) -> Unit,
+        onDuplicateProject: (Project) -> Unit
     ) {
         val context = LocalContext.current
+        val scope = rememberCoroutineScope()
         var cacheSizeState by remember { mutableStateOf("Calculating...") }
         LaunchedEffect(Unit) { cacheSizeState = CacheManager.getCacheSize(context) }
 
@@ -294,14 +325,21 @@ class MainActivity : ComponentActivity() {
                         onCaptureClick   = onCaptureClick,
                         onExtractAudioClick = onExtractAudioClick,
                         onClearCacheClick = {
-                            val cleared = CacheManager.clearAllCache(context)
-                            cacheSizeState = CacheManager.getCacheSize(context)
-                            Toast.makeText(
-                                context,
-                                if (cleared) "Storage cleared" else "Failed to clear some files",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            scope.launch {
+                                val cleared = withContext(Dispatchers.IO) {
+                                    CacheManager.clearAllCache(context)
+                                }
+                                cacheSizeState = withContext(Dispatchers.IO) {
+                                    CacheManager.getCacheSizeNow(context)
+                                }
+                                Toast.makeText(
+                                    context,
+                                    if (cleared) "Storage cleared" else "Failed to clear some files",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         },
+                        cacheSize = cacheSizeState,
                         onDocsClick = onDocsClick
                     )
                 }
@@ -337,13 +375,15 @@ class MainActivity : ComponentActivity() {
 
                 items(items = projects.take(3), key = { it.id }) { project ->
                     ProjectCard(
-                        project   = project,
-                        surface   = surface,
-                        onSurface = onSurface,
-                        subtle    = subtle,
-                        accent    = accent,
-                        onClick   = { onProjectClick(project) },
-                        onDelete  = { onDeleteProject(project) }
+                        project     = project,
+                        surface     = surface,
+                        onSurface   = onSurface,
+                        subtle      = subtle,
+                        accent      = accent,
+                        onClick     = { onProjectClick(project) },
+                        onDelete    = { onDeleteProject(project) },
+                        onRename    = { newTitle -> onRenameProject(project, newTitle) },
+                        onDuplicate = { onDuplicateProject(project) }
                     )
                 }
 
@@ -526,19 +566,19 @@ class MainActivity : ComponentActivity() {
         onCaptureClick: () -> Unit,
         onExtractAudioClick: () -> Unit,
         onClearCacheClick: () -> Unit,
+        cacheSize: String,
         onDocsClick: () -> Unit
     ) {
         val context   = LocalContext.current
         val hasCamera = remember { context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY) }
-        val cacheSize = remember { mutableStateOf(CacheManager.getCacheSize(context)) }
 
-        val actions = remember(hasCamera, cacheSize.value) {
+        val actions = remember(hasCamera, cacheSize) {
             buildList {
                 if (hasCamera) {
                     add(QuickAction(Icons.Outlined.EmergencyRecording, "Capture"))
                 }
                 add(QuickAction(Icons.Outlined.MusicNote, "Extract Audio"))
-                add(QuickAction(Icons.Outlined.DeleteSweep, "Clear Cache", cacheSize.value))
+                add(QuickAction(Icons.Outlined.DeleteSweep, "Clear Cache", cacheSize))
                 add(QuickAction(Icons.AutoMirrored.Outlined.MenuBook, "Docs"))
             }
         }
@@ -556,7 +596,7 @@ class MainActivity : ComponentActivity() {
                                 when (action.label) {
                                     "Capture"       -> onCaptureClick()
                                     "Extract Audio" -> onExtractAudioClick()
-                                    "Clear Cache"   -> { onClearCacheClick(); cacheSize.value = CacheManager.getCacheSize(context) }
+                                    "Clear Cache"   -> onClearCacheClick()
                                     "Docs"          -> onDocsClick()
                                 }
                             }
@@ -572,12 +612,12 @@ class MainActivity : ComponentActivity() {
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
-                                .padding(4.dp)
+                                .offset(x = 6.dp, y = (-6).dp)
                                 .clip(RoundedCornerShape(4.dp))
                                 .background(accent)
                                 .padding(horizontal = 4.dp, vertical = 1.dp)
                         ) {
-                            Text(it, fontSize = 8.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(it, fontSize = 8.sp, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1)
                         }
                     }
                 }
@@ -594,8 +634,36 @@ class MainActivity : ComponentActivity() {
         subtle: Color,
         accent: Color,
         onClick: () -> Unit = {},
-        onDelete: () -> Unit
+        onDelete: () -> Unit,
+        onRename: (String) -> Unit = {},
+        onDuplicate: () -> Unit = {}
     ) {
+        val context = LocalContext.current
+        var videoThumbnail by remember { mutableStateOf<Bitmap?>(null) }
+
+        LaunchedEffect(project.thumbnailUri) {
+            val uriStr = project.thumbnailUri
+            val mime = project.thumbnailMimeType
+            if (uriStr != null && mime?.startsWith("video") == true) {
+                withContext(Dispatchers.IO) {
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(context, Uri.parse(uriStr))
+                        val bitmap = retriever.getFrameAtTime(0)
+                        videoThumbnail = bitmap
+                    } catch (_: Exception) {
+                        // ignore
+                    } finally {
+                        retriever.release()
+                    }
+                }
+            }
+        }
+
+        var showActions       by remember { mutableStateOf(false) }
+        var showRenameSheet    by remember { mutableStateOf(false) }
+        var showDeleteConfirm by remember { mutableStateOf(false) }
+
         val dismissState = rememberSwipeToDismissBoxState(
             confirmValueChange = { value ->
                 if (value == SwipeToDismissBoxValue.EndToStart) { onDelete(); true } else false
@@ -631,7 +699,19 @@ class MainActivity : ComponentActivity() {
                 verticalAlignment     = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Box(modifier = Modifier.size(width = 80.dp, height = 56.dp).clip(RoundedCornerShape(10.dp)).background(project.thumbnailColor))
+                Box(
+                    modifier = Modifier
+                        .size(width = 80.dp, height = 56.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(project.thumbnailColor)
+                ) {
+                    coil3.compose.AsyncImage(
+                        model = videoThumbnail ?: project.thumbnailUri,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(project.title,                          fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = onSurface)
                     Text("${project.date} · ${project.duration}", fontSize = 12.sp, color = subtle)
@@ -639,8 +719,283 @@ class MainActivity : ComponentActivity() {
                         Text(project.resolution, fontSize = 10.sp, color = accent, fontWeight = FontWeight.SemiBold)
                     }
                 }
-                Icon(Icons.Outlined.MoreVert, contentDescription = "More", tint = subtle, modifier = Modifier.size(20.dp))
+                Box(
+                    modifier         = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .clickable { showActions = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Outlined.MoreVert, contentDescription = "More options", tint = subtle, modifier = Modifier.size(20.dp))
+                }
             }
+        }
+
+        if (showActions) {
+            ProjectActionsSheet(
+                projectTitle = project.title,
+                onDismiss    = { showActions = false },
+                onOpen       = { showActions = false; onClick() },
+                onRename     = { showActions = false; showRenameSheet = true },
+                onDuplicate  = { showActions = false; onDuplicate() },
+                onDelete     = { showActions = false; showDeleteConfirm = true }
+            )
+        }
+
+        if (showRenameSheet) {
+            RenameProjectSheet(
+                currentTitle = project.title,
+                onDismiss    = { showRenameSheet = false },
+                onConfirm    = { newTitle -> showRenameSheet = false; onRename(newTitle) }
+            )
+        }
+
+        if (showDeleteConfirm) {
+            DeleteProjectConfirmSheet(
+                projectTitle = project.title,
+                onDismiss    = { showDeleteConfirm = false },
+                onConfirm    = { showDeleteConfirm = false; onDelete() }
+            )
+        }
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun ProjectActionsSheet(
+        projectTitle: String,
+        onDismiss:    () -> Unit,
+        onOpen:       () -> Unit,
+        onRename:     () -> Unit,
+        onDuplicate:  () -> Unit,
+        onDelete:     () -> Unit
+    ) {
+        val dark      = isSystemInDarkTheme()
+        val surface   = if (dark) Color(0xFF1C1C2E) else Color(0xFFFFFFFF)
+        val onSurface = if (dark) Color(0xFFEEEEEE) else Color(0xFF111111)
+        val subtle    = if (dark) Color(0xFF888899) else Color(0xFF888888)
+        val divider   = if (dark) Color(0xFF2A2A3E) else Color(0xFFEEEEF5)
+        val danger    = Color(0xFFE5484D)
+
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val scope      = rememberCoroutineScope()
+
+        val hideAndRun: (() -> Unit) -> Unit = { action ->
+            scope.launch { sheetState.hide() }.invokeOnCompletion { action() }
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = onDismiss,
+            sheetState       = sheetState,
+            containerColor   = surface,
+            dragHandle       = { BottomSheetDefaults.DragHandle(color = subtle.copy(alpha = 0.4f)) }
+        ) {
+            Text(
+                projectTitle,
+                fontSize   = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color      = subtle,
+                maxLines   = 1,
+                overflow   = TextOverflow.Ellipsis,
+                modifier   = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)
+            )
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(color = divider, thickness = 0.5.dp)
+
+            ProjectActionRow(Icons.Outlined.PlayArrow,    "Open Project", onSurface) { hideAndRun(onOpen) }
+            HorizontalDivider(color = divider, thickness = 0.5.dp, modifier = Modifier.padding(start = 24.dp))
+            ProjectActionRow(Icons.Outlined.Edit,         "Rename",       onSurface) { hideAndRun(onRename) }
+            HorizontalDivider(color = divider, thickness = 0.5.dp, modifier = Modifier.padding(start = 24.dp))
+            ProjectActionRow(Icons.Outlined.ContentCopy,  "Duplicate",    onSurface) { hideAndRun(onDuplicate) }
+            HorizontalDivider(color = divider, thickness = 0.5.dp, modifier = Modifier.padding(start = 24.dp))
+            ProjectActionRow(Icons.Outlined.DeleteOutline,"Delete",       danger) { hideAndRun(onDelete) }
+
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    @Composable
+    private fun ProjectActionRow(icon: ImageVector, label: String, tint: Color, onClick: () -> Unit) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onClick() }
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(16.dp))
+            Text(label, fontSize = 15.sp, color = tint, fontWeight = FontWeight.Medium)
+        }
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun RenameProjectSheet(
+        currentTitle: String,
+        onDismiss:    () -> Unit,
+        onConfirm:    (String) -> Unit
+    ) {
+        val dark      = isSystemInDarkTheme()
+        val surface   = if (dark) Color(0xFF1C1C2E) else Color(0xFFFFFFFF)
+        val onSurface = if (dark) Color(0xFFEEEEEE) else Color(0xFF111111)
+        val subtle    = if (dark) Color(0xFF888899) else Color(0xFF888888)
+        val accent    = Color(0xFF6C63FF)
+
+        var titleInput by remember { mutableStateOf(currentTitle) }
+        val sheetState  = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val scope       = rememberCoroutineScope()
+
+        val hideAndDismiss: () -> Unit = {
+            scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+        }
+        val hideAndConfirm: () -> Unit = {
+            val finalTitle = titleInput.trim()
+            if (finalTitle.isNotEmpty()) {
+                scope.launch { sheetState.hide() }.invokeOnCompletion { onConfirm(finalTitle) }
+            }
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = onDismiss,
+            sheetState       = sheetState,
+            containerColor   = surface,
+            dragHandle       = { BottomSheetDefaults.DragHandle(color = subtle.copy(alpha = 0.4f)) },
+            modifier         = Modifier.imePadding()
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)) {
+                Box(
+                    modifier         = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(accent.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Outlined.Edit, contentDescription = null, tint = accent, modifier = Modifier.size(22.dp))
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("Rename Project", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = onSurface)
+                Spacer(Modifier.height(16.dp))
+                OutlinedTextField(
+                    value         = titleInput,
+                    onValueChange = { titleInput = it },
+                    singleLine    = true,
+                    modifier      = Modifier.fillMaxWidth(),
+                    colors        = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor   = accent,
+                        unfocusedBorderColor = subtle.copy(alpha = 0.3f),
+                        focusedTextColor     = onSurface,
+                        unfocusedTextColor   = onSurface
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            Row(
+                modifier              = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick  = hideAndDismiss,
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape    = RoundedCornerShape(12.dp),
+                    border   = BorderStroke(1.dp, subtle.copy(alpha = 0.3f))
+                ) {
+                    Text("Cancel", color = subtle, fontWeight = FontWeight.SemiBold)
+                }
+                Button(
+                    onClick  = hideAndConfirm,
+                    enabled  = titleInput.isNotBlank(),
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape    = RoundedCornerShape(12.dp),
+                    colors   = ButtonDefaults.buttonColors(containerColor = accent)
+                ) {
+                    Text("Save", fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            }
+            Spacer(Modifier.height(32.dp))
+        }
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun DeleteProjectConfirmSheet(
+        projectTitle: String,
+        onDismiss:    () -> Unit,
+        onConfirm:    () -> Unit
+    ) {
+        val dark      = isSystemInDarkTheme()
+        val surface   = if (dark) Color(0xFF1C1C2E) else Color(0xFFFFFFFF)
+        val onSurface = if (dark) Color(0xFFEEEEEE) else Color(0xFF111111)
+        val subtle    = if (dark) Color(0xFF888899) else Color(0xFF888888)
+        val danger    = Color(0xFFE5484D)
+
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val scope      = rememberCoroutineScope()
+
+        val hideAndDismiss: () -> Unit = {
+            scope.launch { sheetState.hide() }.invokeOnCompletion { onDismiss() }
+        }
+        val hideAndConfirm: () -> Unit = {
+            scope.launch { sheetState.hide() }.invokeOnCompletion { onConfirm() }
+        }
+
+        ModalBottomSheet(
+            onDismissRequest = onDismiss,
+            sheetState       = sheetState,
+            containerColor   = surface,
+            dragHandle       = { BottomSheetDefaults.DragHandle(color = subtle.copy(alpha = 0.4f)) }
+        ) {
+            Column(
+                modifier            = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier         = Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(danger.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Outlined.Warning, contentDescription = null, tint = danger, modifier = Modifier.size(28.dp))
+                }
+                Spacer(Modifier.height(16.dp))
+                Text("Delete Project?", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = danger, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "\"$projectTitle\" and all its clips will be permanently removed. This can't be undone.",
+                    fontSize   = 13.sp,
+                    color      = subtle,
+                    lineHeight = 19.sp,
+                    textAlign  = TextAlign.Center
+                )
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            Column(
+                modifier            = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Button(
+                    onClick  = hideAndConfirm,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape    = RoundedCornerShape(12.dp),
+                    colors   = ButtonDefaults.buttonColors(containerColor = danger)
+                ) {
+                    Text("Delete Project", fontWeight = FontWeight.Bold, color = Color.White)
+                }
+                OutlinedButton(
+                    onClick  = hideAndDismiss,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape    = RoundedCornerShape(12.dp),
+                    border   = BorderStroke(1.dp, subtle.copy(alpha = 0.3f))
+                ) {
+                    Text("Cancel", color = subtle, fontWeight = FontWeight.SemiBold)
+                }
+            }
+            Spacer(Modifier.height(32.dp))
         }
     }
 
@@ -879,10 +1234,10 @@ class MainActivity : ComponentActivity() {
         val videoCaptureState   = remember { mutableStateOf<androidx.camera.video.VideoCapture<androidx.camera.video.Recorder>?>(null) }
         val imageCaptureState   = remember { mutableStateOf<androidx.camera.core.ImageCapture?>(null) }
         val activeRecordingState = remember { mutableStateOf<androidx.camera.video.Recording?>(null) }
-        
+
         var pendingMedia by remember { mutableStateOf<ImportedMedia?>(null) }
-        
-        val previewView = remember { 
+
+        val previewView = remember {
             androidx.camera.view.PreviewView(context).apply {
                 scaleType = androidx.camera.view.PreviewView.ScaleType.FIT_CENTER
                 implementationMode = androidx.camera.view.PreviewView.ImplementationMode.COMPATIBLE
@@ -905,11 +1260,11 @@ class MainActivity : ComponentActivity() {
 
         LaunchedEffect(hasPermissions, lensFacing, captureRatio) {
             if (!hasPermissions) return@LaunchedEffect
-            
+
             val cameraProviderFuture = androidx.camera.lifecycle.ProcessCameraProvider.getInstance(context)
             cameraProviderFuture.addListener({
                 val cameraProvider = cameraProviderFuture.get()
-                
+
                 val resolutionSelector = androidx.camera.core.resolutionselector.ResolutionSelector.Builder()
                     .setAspectRatioStrategy(
                         androidx.camera.core.resolutionselector.AspectRatioStrategy(
@@ -928,7 +1283,7 @@ class MainActivity : ComponentActivity() {
                 val recorder = androidx.camera.video.Recorder.Builder()
                     .setQualitySelector(
                         androidx.camera.video.QualitySelector.from(
-                            if (captureRatio == CaptureRatio.R_16_9) androidx.camera.video.Quality.HIGHEST 
+                            if (captureRatio == CaptureRatio.R_16_9) androidx.camera.video.Quality.HIGHEST
                             else androidx.camera.video.Quality.SD
                         )
                     )
@@ -973,7 +1328,7 @@ class MainActivity : ComponentActivity() {
                     Box(modifier = Modifier.fillMaxSize()) {
                         // 4:3 is 0.75 ratio. Height is size.height. Width should be height * 0.75.
                         // We'll just mask the sides if it's 16:9 screen.
-                        // This is a bit complex for dynamic layout, but for now we'll just skip masking 
+                        // This is a bit complex for dynamic layout, but for now we'll just skip masking
                         // and let the preview fill.
                     }
                 }
@@ -1027,7 +1382,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-                    
+
                     // Ratio Switcher
                     if (!isRecording) {
                         Box(
@@ -1128,7 +1483,7 @@ class MainActivity : ComponentActivity() {
                                     val imageCapture = imageCaptureState.value ?: return@clickable
                                     val file = java.io.File(context.filesDir, "FluxCut_IMG_${System.currentTimeMillis()}.jpg")
                                     val outputOptions = androidx.camera.core.ImageCapture.OutputFileOptions.Builder(file).build()
-                                    
+
                                     imageCapture.takePicture(
                                         outputOptions,
                                         androidx.core.content.ContextCompat.getMainExecutor(context),
@@ -1166,7 +1521,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            
+
             // Confirmation Overlay
             pendingMedia?.let { media ->
                 CaptureConfirmationOverlay(
@@ -1187,7 +1542,7 @@ class MainActivity : ComponentActivity() {
         val context = LocalContext.current
         val scope = rememberCoroutineScope()
         var videoThumbnail by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-        
+
         LaunchedEffect(media) {
             if (media.mimeType.startsWith("video")) {
                 scope.launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -1232,9 +1587,9 @@ class MainActivity : ComponentActivity() {
                     color = Color.Gray,
                     textAlign = TextAlign.Center
                 )
-                
+
                 Spacer(Modifier.height(24.dp))
-                
+
                 // Preview
                 Box(
                     modifier = Modifier
@@ -1355,7 +1710,9 @@ class MainActivity : ComponentActivity() {
         projects: List<Project>,
         onBackClick: () -> Unit,
         onProjectClick: (Project) -> Unit,
-        onDeleteProject: (Project) -> Unit
+        onDeleteProject: (Project) -> Unit,
+        onRenameProject: (Project, String) -> Unit,
+        onDuplicateProject: (Project) -> Unit
     ) {
         val dark      = isSystemInDarkTheme()
         val bg        = if (dark) Color(0xFF0A0A0F) else Color(0xFFF5F5F7)
@@ -1384,13 +1741,15 @@ class MainActivity : ComponentActivity() {
                     ) {
                         items(items = projects, key = { it.id }) { project ->
                             ProjectCard(
-                                project   = project,
-                                surface   = surface,
-                                onSurface = onSurface,
-                                subtle    = subtle,
-                                accent    = accent,
-                                onClick   = { onProjectClick(project) },
-                                onDelete  = { onDeleteProject(project) }
+                                project     = project,
+                                surface     = surface,
+                                onSurface   = onSurface,
+                                subtle      = subtle,
+                                accent      = accent,
+                                onClick     = { onProjectClick(project) },
+                                onDelete    = { onDeleteProject(project) },
+                                onRename    = { newTitle -> onRenameProject(project, newTitle) },
+                                onDuplicate = { onDuplicateProject(project) }
                             )
                         }
                         item { Spacer(Modifier.height(32.dp)) }

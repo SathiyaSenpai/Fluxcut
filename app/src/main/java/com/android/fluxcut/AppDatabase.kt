@@ -57,8 +57,23 @@ data class ProjectWithClips(
     val clips: List<ClipEntity>
 )
 
+data class ProjectWithThumbnailQuery(
+    @Embedded val project: ProjectEntity,
+    @ColumnInfo(name = "firstClipUri") val firstClipUri: String?,
+    @ColumnInfo(name = "firstClipMimeType") val firstClipMimeType: String?
+)
+
 @Dao
 interface ProjectDao {
+    @Query("""
+        SELECT p.*, 
+        (SELECT sourceUri FROM clips WHERE projectId = p.id AND (track = 'VIDEO') ORDER BY startMs ASC LIMIT 1) as firstClipUri,
+        (SELECT mimeType FROM clips WHERE projectId = p.id AND (track = 'VIDEO') ORDER BY startMs ASC LIMIT 1) as firstClipMimeType
+        FROM projects p
+        ORDER BY lastModified DESC
+    """)
+    fun observeAllWithThumbnail(): Flow<List<ProjectWithThumbnailQuery>>
+
     @Query("SELECT * FROM projects ORDER BY lastModified DESC")
     fun observeAll(): Flow<List<ProjectEntity>>
 
@@ -131,7 +146,7 @@ abstract class AppDatabase : RoomDatabase() {
     }
 }
 
-fun ProjectEntity.toProject() = Project(
+fun ProjectEntity.toProject(thumbnailUri: String? = null, thumbnailMimeType: String? = null) = Project(
     id             = id,
     title          = title,
     date           = date,
@@ -140,6 +155,8 @@ fun ProjectEntity.toProject() = Project(
     aspectRatio    = aspectRatio,
     fps            = fps,
     thumbnailColor = Color(thumbnailColorArgb),
+    thumbnailUri   = thumbnailUri,
+    thumbnailMimeType = thumbnailMimeType,
     lastModified   = lastModified
 )
 
@@ -189,8 +206,8 @@ class ProjectRepository(context: Context) {
     private val dao        = db.projectDao()
     private val clipDao    = db.clipDao()
 
-    val projects: Flow<List<Project>> = dao.observeAll().map { list ->
-        list.map { it.toProject() }
+    val projects: Flow<List<Project>> = dao.observeAllWithThumbnail().map { list ->
+        list.map { it.project.toProject(it.firstClipUri, it.firstClipMimeType) }
     }
 
     suspend fun save(project: Project) = dao.upsert(project.toEntity())
@@ -206,5 +223,21 @@ class ProjectRepository(context: Context) {
     suspend fun saveTimeline(project: Project, clips: List<TimelineClip>) {
         dao.upsert(project.toEntity())
         clipDao.replaceClips(project.id, clips.map { it.toEntity(project.id) })
+    }
+
+    /**
+     * Creates a copy of [project], including all its clips, under a new id.
+     * Clip ids are reused as-is since the (id, projectId) pair is what Room
+     * treats as unique, so no clip-id remapping is needed.
+     */
+    suspend fun duplicate(project: Project): Project {
+        val newProject = project.copy(
+            id           = (System.currentTimeMillis() % Int.MAX_VALUE).toInt(),
+            title        = "${project.title} Copy",
+            lastModified = System.currentTimeMillis()
+        )
+        val originalClips = getProjectWithClips(project.id)?.clips?.map { it.toTimelineClip() } ?: emptyList()
+        saveTimeline(newProject, originalClips)
+        return newProject
     }
 }

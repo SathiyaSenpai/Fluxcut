@@ -1,25 +1,57 @@
 package com.android.fluxcut
 
+import android.app.usage.StorageStatsManager
 import android.content.Context
+import android.os.Process
+import android.os.storage.StorageManager
 import java.io.File
 import java.util.Locale
 
 object CacheManager {
 
     fun getCacheSize(context: Context): String {
+        return try {
+            val storageStatsManager = context.getSystemService(Context.STORAGE_STATS_SERVICE) as StorageStatsManager
+            val uuid = StorageManager.UUID_DEFAULT
+            val stats = storageStatsManager.queryStatsForPackage(uuid, context.packageName, Process.myUserHandle())
+            formatSize(stats.cacheBytes)
+        } catch (e: Exception) {
+            // Fallback to manual calculation if StorageStatsManager fails
+            formatSize(calculateCacheBytes(context))
+        }
+    }
+
+    /**
+     * Computes cache size by walking the cache directories directly instead of
+     * going through StorageStatsManager. StorageStatsManager reads from the OS's
+     * quota-tracking layer, which can report stale (pre-deletion) numbers for a
+     * short window right after files are deleted. Use this right after
+     * [clearAllCache] so the UI reflects the real, current on-disk state instead
+     * of a stale quota snapshot.
+     */
+    fun getCacheSizeNow(context: Context): String = formatSize(calculateCacheBytes(context))
+
+    private fun calculateCacheBytes(context: Context): Long {
         var size: Long = 0
         size += getFolderSize(context.cacheDir)
-        context.externalCacheDir?.let {
-            size += getFolderSize(it)
+        size += getFolderSize(context.codeCacheDir)
+        context.externalCacheDirs.forEach { dir ->
+            if (dir != null) size += getFolderSize(dir)
         }
-        return formatSize(size)
+        return size
     }
 
     fun clearAllCache(context: Context): Boolean {
         return try {
             val internalCleared = deleteDirContent(context.cacheDir)
-            val externalCleared = context.externalCacheDir?.let { deleteDirContent(it) } ?: true
-            internalCleared && externalCleared
+            val codeCacheCleared = deleteDirContent(context.codeCacheDir)
+            var externalCleared = true
+            context.externalCacheDirs.forEach { dir ->
+                if (dir != null) {
+                    if (!deleteDirContent(dir)) externalCleared = false
+                }
+            }
+            internalCleared && codeCacheCleared && externalCleared
         } catch (e: Exception) {
             false
         }
@@ -49,7 +81,7 @@ object CacheManager {
     }
 
     private fun formatSize(size: Long): String {
-        if (size <= 0) return "0 KB"
+        if (size <= 0) return "0.0 B"
         val units = arrayOf("B", "KB", "MB", "GB")
         val digitGroups = (Math.log10(size.toDouble()) / Math.log10(1024.0)).toInt()
         val clampedGroup = digitGroups.coerceAtMost(units.size - 1)

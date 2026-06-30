@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -82,8 +83,14 @@ data class SettingsSection(
 
 @Composable
 fun SettingsScreen(navigateTo: () -> Unit) {
+    val context = LocalContext.current
     val dark = isSystemInDarkTheme()
     val locale = LocalConfiguration.current.locales[0]
+
+    var cacheSize by remember { mutableStateOf("Calculating...") }
+    LaunchedEffect(Unit) {
+        cacheSize = CacheManager.getCacheSize(context)
+    }
 
     val bg        = if (dark) Color(0xFF0A0A0F) else Color(0xFFF5F5F7)
     val surface   = if (dark) Color(0xFF1A1A2E) else Color(0xFFFFFFFF)
@@ -135,8 +142,9 @@ fun SettingsScreen(navigateTo: () -> Unit) {
 
     fun s(key: String) = stateMap[key] ?: ""
 
-    val sections = listOf(
-        SettingsSection("Timeline", videoAccent, listOf(
+    val sections = remember(cacheSize) {
+        listOf(
+            SettingsSection("Timeline", videoAccent, listOf(
             SettingItem(Icons.Outlined.Speed, "Default Frame Rate", "Target FPS for new projects", s("Default Frame Rate"),
                 dialog = SettingDialogType.OptionPicker("Default Frame Rate", "Target FPS for new projects",
                     listOf("24 fps", "30 fps", "60 fps", "120 fps"), s("Default Frame Rate"), videoAccent)),
@@ -258,7 +266,7 @@ fun SettingsScreen(navigateTo: () -> Unit) {
                 dialog = SettingDialogType.Destructive("Reset All Settings",
                     "This will restore every setting to factory default.",
                     "Reset Settings", dangerAccent)),
-            SettingItem(Icons.Outlined.DeleteForever, "Clear All Cache", "Delete all temporary files", null, isDestructive = true,
+            SettingItem(Icons.Outlined.DeleteForever, "Clear All Cache", "Delete all temporary files", cacheSize, isDestructive = true,
                 dialog = SettingDialogType.Destructive("Clear All Cache",
                     "Permanently delete proxy and preview caches.",
                     "Clear Cache", dangerAccent)),
@@ -271,7 +279,7 @@ fun SettingsScreen(navigateTo: () -> Unit) {
                 dialog = SettingDialogType.Info("Contribute on GitHub",
                     "github.com/android/fluxcut", videoAccent)),
         )),
-    )
+    ) }
 
     var activeDialog by remember { mutableStateOf<SettingDialogType?>(null) }
 
@@ -379,6 +387,12 @@ fun SettingsScreen(navigateTo: () -> Unit) {
                     is SettingDialogType.OptionPicker -> stateMap[dialog.title] = newValue
                     is SettingDialogType.Toggle       -> stateMap[dialog.title] = if (newValue == "true") "On" else "Off"
                     is SettingDialogType.ColorPicker  -> stateMap[dialog.title] = newValue
+                    is SettingDialogType.Destructive -> {
+                        if (dialog.title == "Clear All Cache") {
+                            CacheManager.clearAllCache(context)
+                            cacheSize = CacheManager.getCacheSize(context)
+                        }
+                    }
                     else                              -> { }
                 }
                 activeDialog = null

@@ -166,8 +166,8 @@ fun EditorScreen(args: EditorArgs, onBack: () -> Unit) {
     }
 
     LaunchedEffect(state.clips.isEmpty(), autoFired) {
-        if (args.autoOpenPicker && !autoFired && state.clips.isEmpty()) { 
-            autoFired = true; importLauncher() 
+        if (args.autoOpenPicker && !autoFired && state.clips.isEmpty()) {
+            autoFired = true; importLauncher()
         }
     }
 
