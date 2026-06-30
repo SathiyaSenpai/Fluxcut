@@ -31,6 +31,8 @@ data class TimelineClip(
     val trimStartMs: Long    = 0L,
     val color:       Color   = Color(0xFF4A90D9),
     val hasAudio:    Boolean = false,
+    val isImage:     Boolean = false,
+    val mimeType:    String? = null,
     val sourceUri:   String? = null
 ) {
     val endMs: Long get() = startMs + durationMs
@@ -44,4 +46,7 @@ data class EditorColors(
     val playhead:  Color
 )
 
-data class EditorArgs(val project: Project)
+data class EditorArgs(
+    val project: Project,
+    val autoOpenPicker: Boolean = true
+)

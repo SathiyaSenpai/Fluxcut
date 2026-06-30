@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -71,6 +72,7 @@ class EditorViewModel(
         }
     }
 
+    @UnstableApi
     private fun rebuildPlayerPlaylist(clips: List<TimelineClip>) {
         val wasPlaying = player.isPlaying
         val posMs      = getAbsolutePosition()
@@ -80,15 +82,23 @@ class EditorViewModel(
             .sortedBy { it.startMs }
 
         val items = videoClips.map { clip ->
-            MediaItem.Builder()
-                .setUri(Uri.parse(clip.sourceUri))
-                .setClippingConfiguration(
-                    MediaItem.ClippingConfiguration.Builder()
-                        .setStartPositionMs(clip.trimStartMs)
-                        .setEndPositionMs(clip.trimStartMs + clip.durationMs)
-                        .build()
-                )
-                .build()
+            if (clip.isImage) {
+                MediaItem.Builder()
+                    .setUri(Uri.parse(clip.sourceUri))
+                    .setMimeType(clip.mimeType ?: "image/jpeg")
+                    .setImageDurationMs(clip.durationMs)
+                    .build()
+            } else {
+                MediaItem.Builder()
+                    .setUri(Uri.parse(clip.sourceUri))
+                    .setClippingConfiguration(
+                        MediaItem.ClippingConfiguration.Builder()
+                            .setStartPositionMs(clip.trimStartMs)
+                            .setEndPositionMs(clip.trimStartMs + clip.durationMs)
+                            .build()
+                    )
+                    .build()
+            }
         }
 
         player.setMediaItems(items)

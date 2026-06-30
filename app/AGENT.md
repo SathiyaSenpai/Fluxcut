@@ -24,9 +24,14 @@ Core capabilities:
 
 No accounts, no cloud sync, no telemetry. Everything runs on-device.
 
+### UI Layout & Insets
+
+- Always place top-level headers (like `EditorTopBar`) inside the `Scaffold(topBar = { ... })` slot. Placing them inside the `Column` of the `content` block can lead to visibility issues with system insets or when other UI elements (like panels) are animated.
+- When creating aspect-ratio-bound preview containers (like the video canvas), use `Modifier.aspectRatio(ratio, matchHeightConstraintsFirst = true)`. This ensures the preview scales correctly within the available vertical space of the editor without pushing other UI elements off-screen.
+
 ---
 
-## Tech Stack
+## Technical Stack
 
 | Layer | Library / Tool |
 |---|---|
@@ -222,6 +227,7 @@ These features are complete and functional. Do not refactor or rewrite them unle
 | Profile screen | `ProfileScreen.kt` | Avatar, stats, weekly activity bar chart, export count |
 | Edit profile | `EditProfileScreen.kt` | Name/handle/bio text fields, photo picker, saves to `UserPreferences` |
 | Camera capture | `MainActivity.kt` → `CaptureScreen` | CameraX Preview + Video/Photo modes, front/back switch, ratio selection, confirmation with preview, auto-import to timeline |
+| Extract Audio | `MainActivity.kt` + `FFmpegEngine.kt` | Picks video, extracts MP3 via FFmpeg with SAF handling, saves to Gallery |
 | Cache management | `CacheManager.kt` + `HomeScreen` | Real folder size calculation, clears internal + external cache |
 | Docs screen | `MainActivity.kt` → `DocsScreen` | Static manual content cards |
 | Manifest permissions | `AndroidManifest.xml` | All API-level-scoped permissions + `largeHeap` |
@@ -241,7 +247,6 @@ Do not call, depend on, or build on top of these until explicitly asked to imple
 | Text overlay on export | `EditorScreen.kt` → `TextPanel` | UI only — no FFmpeg drawtext filter wired |
 | Filter on export | `EditorScreen.kt` → `FilterPanel` | UI only — no FFmpeg filter wired |
 | Settings persistence | `SettingsScreen.kt` | `stateMap` is in-memory only — values reset on relaunch. `UserPreferences.saveSetting` exists but is not called |
-| Extract Audio quick action | `MainActivity.kt` → `QuickActionsRow` | Button exists, click does nothing |
 | `TimelineView.kt` | `TimelineView.kt` | Entire file is dead code — `EditorScreen` uses its own `MultiTrackTimeline` |
 
 ---

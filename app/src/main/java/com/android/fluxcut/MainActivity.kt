@@ -2,12 +2,14 @@ package com.android.fluxcut
 
 import android.content.pm.PackageManager
 import android.os.Bundle
+import java.io.File
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
@@ -83,6 +85,25 @@ class MainActivity : ComponentActivity() {
                     if (navStack.size > 1) navStack.removeAt(navStack.size - 1)
                 }
 
+                val audioExtractLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.PickVisualMedia()
+                ) { uri ->
+                    uri?.let {
+                        Toast.makeText(context, "Extracting audio...", Toast.LENGTH_SHORT).show()
+                        FFmpegEngine.extractAudio(context, it) { result ->
+                            when (result) {
+                                is ExportResult.Success -> {
+                                    Toast.makeText(context, "Audio extracted: ${File(result.outputPath).name}", Toast.LENGTH_LONG).show()
+                                }
+                                is ExportResult.Failure -> {
+                                    Toast.makeText(context, "Extraction failed", Toast.LENGTH_SHORT).show()
+                                }
+                                else -> {}
+                            }
+                        }
+                    }
+                }
+
                 BackHandler(enabled = navStack.size > 1) { navigateBack() }
 
                 val dark      = isSystemInDarkTheme()
@@ -130,6 +151,11 @@ class MainActivity : ComponentActivity() {
                                     onSettingsClick      = { navigateTo("settings") },
                                     onCreateProjectClick = { navigateTo("create_project") },
                                     onCaptureClick       = { navigateTo("capture") },
+                                    onExtractAudioClick  = { 
+                                        audioExtractLauncher.launch(
+                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+                                        )
+                                    },
                                     onDocsClick          = { navigateTo("docs") },
                                     onProjectClick       = { project ->
                                         editorProject = project; navigateTo("editor")
@@ -164,52 +190,42 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
                                 "editor"         -> editorProject?.let { project ->
-                                    EditorScreen(project = project, onBack = { navigateBack() })
+                                    val autoOpen = remember(project.id) {
+                                        val prev = if (navStack.size >= 2) navStack[navStack.size - 2] else null
+                                        prev == "create_project"
+                                    }
+                                    EditorScreen(
+                                        args = EditorArgs(project, autoOpen), 
+                                        onBack = { navigateBack() }
+                                    )
                                 }
                                 "settings"       -> SettingsScreen(navigateTo = { navigateBack() })
                                 "capture"        -> CaptureScreen(
                                     onBackClick = { navigateBack() },
                                     onMediaCaptured = { media ->
                                         scope.launch {
-                                            val targetProject = editorProject ?: projectList.firstOrNull()
-                                            if (targetProject != null) {
-                                                val existing = repository.getProjectWithClips(targetProject.id)
-                                                val clips = existing?.clips?.map { it.toTimelineClip() } ?: emptyList()
-                                                val nextId = (clips.maxOfOrNull { it.id } ?: 0) + 1
-                                                val startMs = clips.maxOfOrNull { it.startMs + it.durationMs } ?: 0L
-                                                
-                                                val newClip = media.toTimelineClip(
-                                                    id = nextId,
-                                                    startMs = startMs,
-                                                    videoColor = Color(0xFF6C63FF),
-                                                    audioColor = Color(0xFF34D399)
-                                                )
-                                                
-                                                repository.saveTimeline(targetProject, clips + newClip)
-                                                editorProject = targetProject
-                                                navigateTo("editor")
-                                            } else {
-                                                // Create a new project if none exists
-                                                val newProject = Project(
-                                                    id = Random.nextInt(100, 100000),
-                                                    title = "Captured Project",
-                                                    date = "Jun 25, 2026",
-                                                    duration = "00:00",
-                                                    resolution = "1080p",
-                                                    aspectRatio = if (media.width > media.height) "16:9" else "9:16",
-                                                    fps = 30,
-                                                    thumbnailColor = Color(0xFF3B82F6)
-                                                )
-                                                val newClip = media.toTimelineClip(
-                                                    id = 1,
-                                                    startMs = 0L,
-                                                    videoColor = Color(0xFF6C63FF),
-                                                    audioColor = Color(0xFF34D399)
-                                                )
-                                                repository.saveTimeline(newProject, listOf(newClip))
-                                                editorProject = newProject
-                                                navigateTo("editor")
-                                            }
+                                            // Always create a new project for capture
+                                            val newProject = Project(
+                                                id = (System.currentTimeMillis() % Int.MAX_VALUE).toInt(),
+                                                title = if (media.mimeType.startsWith("image")) "Captured Photo" else "Captured Video",
+                                                date = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.getDefault()).format(java.util.Date()),
+                                                duration = "00:00",
+                                                resolution = "1080p",
+                                                aspectRatio = if (media.width > media.height) "16:9" else "9:16",
+                                                fps = 30,
+                                                thumbnailColor = Color(0xFF6C63FF)
+                                            )
+                                            
+                                            val newClip = media.toTimelineClip(
+                                                id = 1,
+                                                startMs = 0L,
+                                                videoColor = accent,
+                                                audioColor = Color(0xFF34D399)
+                                            )
+                                            
+                                            repository.saveTimeline(newProject, listOf(newClip))
+                                            editorProject = newProject
+                                            navigateTo("editor")
                                         }
                                     }
                                 )
@@ -229,6 +245,7 @@ class MainActivity : ComponentActivity() {
         onSettingsClick: () -> Unit,
         onCreateProjectClick: () -> Unit,
         onCaptureClick: () -> Unit,
+        onExtractAudioClick: () -> Unit,
         onDocsClick: () -> Unit,
         onProjectClick: (Project) -> Unit,
         onViewAllClick: () -> Unit,
@@ -275,6 +292,7 @@ class MainActivity : ComponentActivity() {
                         accent           = accent,
                         onSurface        = onSurface,
                         onCaptureClick   = onCaptureClick,
+                        onExtractAudioClick = onExtractAudioClick,
                         onClearCacheClick = {
                             val cleared = CacheManager.clearAllCache(context)
                             cacheSizeState = CacheManager.getCacheSize(context)
@@ -506,6 +524,7 @@ class MainActivity : ComponentActivity() {
         onSurface: Color,
         accent: Color,
         onCaptureClick: () -> Unit,
+        onExtractAudioClick: () -> Unit,
         onClearCacheClick: () -> Unit,
         onDocsClick: () -> Unit
     ) {
@@ -535,9 +554,10 @@ class MainActivity : ComponentActivity() {
                             .background(surface)
                             .clickable {
                                 when (action.label) {
-                                    "Capture"     -> onCaptureClick()
-                                    "Clear Cache" -> { onClearCacheClick(); cacheSize.value = CacheManager.getCacheSize(context) }
-                                    "Docs"        -> onDocsClick()
+                                    "Capture"       -> onCaptureClick()
+                                    "Extract Audio" -> onExtractAudioClick()
+                                    "Clear Cache"   -> { onClearCacheClick(); cacheSize.value = CacheManager.getCacheSize(context) }
+                                    "Docs"          -> onDocsClick()
                                 }
                             }
                             .padding(horizontal = 4.dp),
@@ -703,7 +723,7 @@ class MainActivity : ComponentActivity() {
         var nameInput            by remember { mutableStateOf("") }
         var selectedRatio        by remember { mutableStateOf("9:16") }
         var selectedFps          by remember { mutableIntStateOf(30) }
-        val selectedResolution   = "1080p"
+        var selectedResolution   by remember { mutableStateOf("1080p") }
 
         Scaffold(containerColor = bg) { padding ->
             Column(
@@ -779,6 +799,21 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Spacer(Modifier.height(24.dp))
+                Text("Target Resolution", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = subtle)
+                Spacer(Modifier.height(8.dp))
+                LazyRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(listOf("720p", "1080p", "2K", "4K")) { res ->
+                        val isSelected = selectedResolution == res
+                        Box(
+                            modifier         = Modifier.width(88.dp).height(50.dp).clip(RoundedCornerShape(12.dp)).background(if (isSelected) accent else surface).clickable { selectedResolution = res },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(res, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (isSelected) Color.White else onSurface)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(24.dp))
                 Text("Target Frame Rate", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = subtle)
                 Spacer(Modifier.height(8.dp))
                 LazyRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -799,7 +834,7 @@ class MainActivity : ComponentActivity() {
                         val finalName = nameInput.trim().ifEmpty { defaultPlaceholder }
                         onProjectCreated(
                             Project(
-                                id             = Random.nextInt(100, 100000),
+                                id             = (System.currentTimeMillis() % Int.MAX_VALUE).toInt(),
                                 title          = finalName,
                                 date           = "Jun 25, 2026",
                                 duration       = "00:00",

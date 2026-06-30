@@ -22,6 +22,7 @@ data class ProjectEntity(
 
 @Entity(
     tableName = "clips",
+    primaryKeys = ["id", "projectId"],
     foreignKeys = [
         ForeignKey(
             entity        = ProjectEntity::class,
@@ -33,7 +34,7 @@ data class ProjectEntity(
     indices = [Index("projectId")]
 )
 data class ClipEntity(
-    @PrimaryKey val id: Int,
+    val id: Int,
     val projectId: Int,
     val name: String,
     val track: String,
@@ -42,6 +43,8 @@ data class ClipEntity(
     val trimStartMs: Long,
     val colorArgb: Int,
     val hasAudio: Boolean,
+    val isImage: Boolean,
+    val mimeType: String?,
     val sourceUri: String?
 )
 
@@ -103,7 +106,7 @@ interface ClipDao {
 
 @Database(
     entities  = [ProjectEntity::class, ClipEntity::class],
-    version   = 2,
+    version   = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -120,6 +123,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "fluxcut.db"
                 )
+                    .fallbackToDestructiveMigration(dropAllTables = true)
                     .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                     .build()
                     .also { INSTANCE = it }
@@ -160,6 +164,8 @@ fun ClipEntity.toTimelineClip() = TimelineClip(
     trimStartMs  = trimStartMs,
     color        = Color(colorArgb),
     hasAudio     = hasAudio,
+    isImage      = isImage,
+    mimeType     = mimeType,
     sourceUri    = sourceUri
 )
 
@@ -173,6 +179,8 @@ fun TimelineClip.toEntity(projectId: Int) = ClipEntity(
     trimStartMs = trimStartMs,
     colorArgb   = color.toArgb(),
     hasAudio    = hasAudio,
+    isImage     = isImage,
+    mimeType    = mimeType,
     sourceUri   = sourceUri
 )
 

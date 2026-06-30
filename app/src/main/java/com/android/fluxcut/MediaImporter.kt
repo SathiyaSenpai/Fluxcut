@@ -85,6 +85,8 @@ fun ImportedMedia.toTimelineClip(
         durationMs = if (durationMs > 0L) durationMs else 5000L,
         color      = if (isVideo || isImage) videoColor else audioColor,
         hasAudio   = isVideo,
+        isImage    = isImage,
+        mimeType   = mimeType,
         sourceUri  = uri.toString()
     )
 }
@@ -109,7 +111,7 @@ fun rememberMediaImportLauncher(
 
     return {
         launcher.launch(
-            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
         )
     }
 }

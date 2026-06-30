@@ -11,6 +11,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -132,10 +133,12 @@ private sealed class ExportUiState {
 
 @UnstableApi
 @Composable
-fun EditorScreen(project: Project, onBack: () -> Unit) {
+fun EditorScreen(args: EditorArgs, onBack: () -> Unit) {
+    val project = args.project
     val context = LocalContext.current
     val repo    = remember { ProjectRepository(context) }
     val vm: EditorViewModel = viewModel(
+        key     = "editor_${project.id}",
         factory = EditorViewModel.Factory(project, repo, context)
     )
 
@@ -163,7 +166,9 @@ fun EditorScreen(project: Project, onBack: () -> Unit) {
     }
 
     LaunchedEffect(state.clips.isEmpty(), autoFired) {
-        if (!autoFired && state.clips.isEmpty()) { autoFired = true; importLauncher() }
+        if (args.autoOpenPicker && !autoFired && state.clips.isEmpty()) { 
+            autoFired = true; importLauncher() 
+        }
     }
 
     LaunchedEffect(state.errorMessage) {
@@ -192,25 +197,50 @@ fun EditorScreen(project: Project, onBack: () -> Unit) {
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.surface,
-        snackbarHost   = { SnackbarHost(snackbarHost) }
-    ) { pad ->
-        Column(modifier = Modifier.fillMaxSize().padding(pad)) {
-
+        topBar = {
             EditorTopBar(
                 title     = state.project?.title ?: project.title,
                 onBack    = onBack,
                 onAddClip = { importLauncher() },
                 onExport  = { showExport = true }
             )
+        },
+        containerColor = MaterialTheme.colorScheme.surface,
+        snackbarHost   = { SnackbarHost(snackbarHost) }
+    ) { pad ->
+        Column(modifier = Modifier.fillMaxSize().padding(pad)) {
 
+            // Project Preview Canvas
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(0.36f)
-                    .background(Color.Black)
+                    .weight(0.4f)
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center
             ) {
-                VideoPlayerView(player = vm.player, modifier = Modifier.fillMaxSize())
+                // Aspect Ratio Container
+                val projectRatio = remember(project.aspectRatio) {
+                    val parts = project.aspectRatio.split(":")
+                    if (parts.size == 2) {
+                        val w = parts[0].toFloatOrNull() ?: 16f
+                        val h = parts[1].toFloatOrNull() ?: 9f
+                        w / h
+                    } else 16f / 9f
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(8.dp)
+                        .aspectRatio(projectRatio, matchHeightConstraintsFirst = true)
+                        .background(Color(0xFF151520))
+                ) {
+                    VideoPlayerView(
+                        player = vm.player,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
                 if (state.clips.isEmpty()) {
                     EmptyPreviewOverlay { importLauncher() }
                 }
@@ -901,7 +931,7 @@ private fun ExportScreen(
     onReset:     () -> Unit,
     onBack:      () -> Unit
 ) {
-    var resolution by remember { mutableStateOf("1080p") }
+    var resolution by remember { mutableStateOf(project.resolution.ifEmpty { "1080p" }) }
     var fps        by remember { mutableIntStateOf(project.fps.takeIf { it > 0 } ?: 30) }
     val videoCount = clips.count { it.track == TrackType.VIDEO && it.sourceUri != null }
 
@@ -945,7 +975,7 @@ private fun ExportScreen(
 
                     ExportSection("Resolution") {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            listOf("720p", "1080p", "4K").forEach { r ->
+                            listOf("720p", "1080p", "2K", "4K").forEach { r ->
                                 ExportOptionChip(r, resolution == r, MaterialTheme.colorScheme.primary) { resolution = r }
                             }
                         }
@@ -953,7 +983,7 @@ private fun ExportScreen(
 
                     ExportSection("Frame Rate") {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            listOf(24, 30, 60).forEach { f ->
+                            listOf(24, 30, 60, 120).forEach { f ->
                                 ExportOptionChip("${f}fps", fps == f, MaterialTheme.colorScheme.primary) { fps = f }
                             }
                         }
