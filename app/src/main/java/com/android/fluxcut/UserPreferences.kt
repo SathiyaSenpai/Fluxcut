@@ -32,26 +32,12 @@ object UserPreferences {
         )
     }
 
-    fun incrementExportCount(context: Context) {
-        val prefs = getPrefs(context)
-        val current = prefs.getInt("TOTAL_EXPORTS", 0)
-        prefs.edit().putInt("TOTAL_EXPORTS", current + 1).apply()
-    }
-
     fun getExportCount(context: Context): Int {
         return getPrefs(context).getInt("TOTAL_EXPORTS", 0)
     }
 
-    fun saveSetting(context: Context, key: String, value: String) {
-        getPrefs(context).edit().putString(key, value).apply()
-    }
-
-    fun getSetting(context: Context, key: String, default: String): String {
-        return getPrefs(context).getString(key, default) ?: default
-    }
-
     fun calculateWeeklyActivity(projects: List<Project>): List<Float> {
-        val activityCounts = IntArray(7) { 0 }
+        val activityCounts = IntArray(7)
         val calendar = Calendar.getInstance()
         calendar.set(Calendar.HOUR_OF_DAY, 0)
         calendar.set(Calendar.MINUTE, 0)

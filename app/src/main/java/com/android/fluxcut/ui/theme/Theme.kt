@@ -8,24 +8,39 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
+    primary = FluxAccent,
+    secondary = FluxAmber,
+    tertiary = FluxGreen,
+    surface = FluxBg,
+    onSurface = Color.White,
+    surfaceVariant = FluxSurface2,
+    onSurfaceVariant = FluxSubtle,
+    outline = FluxDivider,
+    error = FluxErr,
+    errorContainer = FluxRose,
+    primaryContainer = FluxSky,
+    surfaceContainer = FluxSurface
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
+    primary = FluxAccent,
+    secondary = FluxAmber,
+    tertiary = FluxGreen,
+    surface = Color.White,
+    onSurface = Color.Black,
+    surfaceVariant = Color(0xFFF5F5F7),
+    onSurfaceVariant = Color(0xFF888888),
+    outline = Color(0xFFEEEEF5)
 )
 
 @Composable
 fun FluxcutTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false, // Disabled for consistent branding
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {

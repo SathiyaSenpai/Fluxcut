@@ -24,6 +24,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -32,7 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.layout.ContentScale
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 
 @Composable
 fun ProfileScreen(
@@ -42,6 +43,7 @@ fun ProfileScreen(
     onEditProfileClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val locale = LocalConfiguration.current.locales[0]
     val dark = isSystemInDarkTheme()
 
     val bg             = if (dark) Color(0xFF0A0A0F) else Color(0xFFF5F5F7)
@@ -173,7 +175,7 @@ fun ProfileScreen(
                                         )
                                     } else {
                                         Text(
-                                            text = userName.take(1).uppercase(),
+                                            text = userName.take(1).uppercase(locale),
                                             fontSize = 26.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = onSurface

@@ -1,3 +1,5 @@
+@file:Suppress("INCUBATING_API")
+
 pluginManagement {
     repositories {
         google {

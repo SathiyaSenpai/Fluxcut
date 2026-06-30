@@ -2,6 +2,7 @@ package com.android.fluxcut
 
 import android.content.Context
 import java.io.File
+import java.util.Locale
 
 object CacheManager {
 
@@ -52,6 +53,6 @@ object CacheManager {
         val units = arrayOf("B", "KB", "MB", "GB")
         val digitGroups = (Math.log10(size.toDouble()) / Math.log10(1024.0)).toInt()
         val clampedGroup = digitGroups.coerceAtMost(units.size - 1)
-        return String.format("%.1f %s", size / Math.pow(1024.0, clampedGroup.toDouble()), units[clampedGroup])
+        return String.format(Locale.getDefault(), "%.1f %s", size / Math.pow(1024.0, clampedGroup.toDouble()), units[clampedGroup])
     }
 }

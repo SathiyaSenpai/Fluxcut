@@ -22,17 +22,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 
 @Composable
 fun EditProfileScreen(
     onBackClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val locale = LocalConfiguration.current.locales[0]
     val dark = isSystemInDarkTheme()
 
     val bg = if (dark) Color(0xFF0A0A0F) else Color(0xFFF5F5F7)
@@ -142,7 +144,7 @@ fun EditProfileScreen(
                             )
                         } else {
                             Text(
-                                text = nameInput.take(1).uppercase(),
+                                text = nameInput.take(1).uppercase(locale),
                                 fontSize = 36.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = onSurface

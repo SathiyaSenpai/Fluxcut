@@ -1,42 +1,34 @@
 package com.android.fluxcut
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.absoluteOffset
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Forward5
@@ -57,7 +49,6 @@ import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Straighten
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.VideoLibrary
-import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -66,6 +57,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
@@ -88,54 +80,47 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.util.UnstableApi
 
-private val BG         = Color(0xFF0A0A0F)
-private val SURFACE    = Color(0xFF1A1A2E)
-private val SURFACE2   = Color(0xFF12121C)
-private val SURFACE3   = Color(0xFF0F0F1A)
-private val DIVIDER    = Color(0xFF232338)
-private val ACCENT     = Color(0xFF6C63FF)
-private val ON_SURFACE = Color(0xFFEEEEEE)
-private val SUBTLE     = Color(0xFF666680)
-private val ERR        = Color(0xFFFF5C5C)
-private val PLAYHEAD   = Color(0xFF6C63FF)
-
-private val GREEN = Color(0xFF34D399)
-private val AMBER = Color(0xFFF59E0B)
-private val ROSE  = Color(0xFFF43F5E)
-private val SKY   = Color(0xFF38BDF8)
-
 private enum class ClipTool(
     val label:     String,
     val icon:      ImageVector,
-    val color:     Color,
     val needsClip: Boolean = true
 ) {
-    SPLIT  ("Split",  Icons.Outlined.ContentCut,  ACCENT, needsClip = true),
-    TRIM   ("Trim",   Icons.Outlined.Straighten,  ACCENT, needsClip = true),
-    SPEED  ("Speed",  Icons.Outlined.Speed,       AMBER,  needsClip = true),
-    CROP   ("Crop",   Icons.Outlined.CropFree,    GREEN,  needsClip = true),
-    AUDIO  ("Audio",  Icons.Outlined.VolumeUp,    SKY,    needsClip = false),
-    TEXT   ("Text",   Icons.Outlined.TextFields,  AMBER,  needsClip = false),
-    FILTER ("Filter", Icons.Outlined.AutoFixHigh, ROSE,   needsClip = false),
-    DELETE ("Delete", Icons.Outlined.Delete,      ERR,    needsClip = true),
+    SPLIT  ("Split",  Icons.Outlined.ContentCut,  needsClip = true),
+    TRIM   ("Trim",   Icons.Outlined.Straighten,  needsClip = true),
+    SPEED  ("Speed",  Icons.Outlined.Speed,       needsClip = true),
+    CROP   ("Crop",   Icons.Outlined.CropFree,    needsClip = true),
+    AUDIO  ("Audio",  Icons.AutoMirrored.Outlined.VolumeUp,    needsClip = false),
+    TEXT   ("Text",   Icons.Outlined.TextFields,  needsClip = false),
+    FILTER ("Filter", Icons.Outlined.AutoFixHigh, needsClip = false),
+    DELETE ("Delete", Icons.Outlined.Delete,      needsClip = true),
+}
+
+@Composable
+private fun colorForTool(tool: ClipTool): Color {
+    val cs = MaterialTheme.colorScheme
+    return when (tool) {
+        ClipTool.SPLIT  -> cs.primary
+        ClipTool.TRIM   -> cs.primary
+        ClipTool.SPEED  -> cs.secondary
+        ClipTool.CROP   -> cs.tertiary
+        ClipTool.AUDIO  -> cs.primaryContainer
+        ClipTool.TEXT   -> cs.secondary
+        ClipTool.FILTER -> cs.errorContainer
+        ClipTool.DELETE -> cs.error
+    }
 }
 
 private sealed class ExportUiState {
@@ -162,14 +147,16 @@ fun EditorScreen(project: Project, onBack: () -> Unit) {
     var exportState by remember { mutableStateOf<ExportUiState>(ExportUiState.Idle) }
     var autoFired   by remember { mutableStateOf(false) }
 
+    val videoColor = MaterialTheme.colorScheme.primary
+    val audioColor = MaterialTheme.colorScheme.tertiary
     val importLauncher = rememberMediaImportLauncher { imported ->
         val nextId  = (state.clips.maxOfOrNull { it.id } ?: 0) + 1
         val startMs = state.clips.maxOfOrNull { it.startMs + it.durationMs } ?: 0L
         val clip    = imported.toTimelineClip(
             id         = nextId,
             startMs    = startMs,
-            videoColor = ACCENT,
-            audioColor = GREEN
+            videoColor = videoColor,
+            audioColor = audioColor
         )
         vm.addClip(clip)
         vm.selectClip(clip.id)
@@ -205,7 +192,7 @@ fun EditorScreen(project: Project, onBack: () -> Unit) {
     }
 
     Scaffold(
-        containerColor = BG,
+        containerColor = MaterialTheme.colorScheme.surface,
         snackbarHost   = { SnackbarHost(snackbarHost) }
     ) { pad ->
         Column(modifier = Modifier.fillMaxSize().padding(pad)) {
@@ -285,8 +272,7 @@ fun EditorScreen(project: Project, onBack: () -> Unit) {
                             tool      = tool,
                             state     = state,
                             vm        = vm,
-                            onDismiss = { activeTool = null },
-                            onImport  = { importLauncher() }
+                            onDismiss = { activeTool = null }
                         )
                     }
                 }
@@ -306,24 +292,24 @@ private fun EditorTopBar(
     TopAppBar(
         title = {
             Column {
-                Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = ON_SURFACE, maxLines = 1)
-                Text("Video Editor", fontSize = 10.sp, color = SUBTLE)
+                Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                Text("Video Editor", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
         navigationIcon = {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = ON_SURFACE)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
             }
         },
         actions = {
             IconButton(onClick = onAddClip) {
-                Icon(Icons.Outlined.Add, contentDescription = "Add clip", tint = ACCENT)
+                Icon(Icons.Outlined.Add, contentDescription = "Add clip", tint = MaterialTheme.colorScheme.primary)
             }
             Box(
                 modifier = Modifier
                     .padding(end = 10.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .background(ACCENT)
+                    .background(MaterialTheme.colorScheme.primary)
                     .clickable { onExport() }
                     .padding(horizontal = 14.dp, vertical = 7.dp)
             ) {
@@ -336,7 +322,7 @@ private fun EditorTopBar(
                 }
             }
         },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = SURFACE)
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
     )
 }
 
@@ -354,16 +340,16 @@ private fun EmptyPreviewOverlay(onPick: () -> Unit) {
                 modifier = Modifier
                     .size(60.dp)
                     .clip(CircleShape)
-                    .background(ACCENT.copy(alpha = 0.18f))
-                    .border(1.5.dp, ACCENT.copy(alpha = 0.5f), CircleShape),
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))
+                    .border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Outlined.VideoLibrary, contentDescription = null, tint = ACCENT, modifier = Modifier.size(28.dp))
+                Icon(Icons.Outlined.VideoLibrary, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
             }
-            Text("No media yet", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = ON_SURFACE)
+            Text("No media yet", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
             Button(
                 onClick = onPick,
-                colors  = ButtonDefaults.buttonColors(containerColor = ACCENT),
+                colors  = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                 shape   = RoundedCornerShape(10.dp)
             ) {
                 Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -389,7 +375,7 @@ private fun TransportRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(SURFACE)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
             .padding(horizontal = 10.dp, vertical = 4.dp)
     ) {
         if (totalMs > 0L) {
@@ -399,9 +385,9 @@ private fun TransportRow(
                 onValueChange = { onSeek(it.toLong()) },
                 modifier      = Modifier.fillMaxWidth().height(26.dp),
                 colors        = SliderDefaults.colors(
-                    thumbColor         = ACCENT,
-                    activeTrackColor   = ACCENT,
-                    inactiveTrackColor = DIVIDER
+                    thumbColor         = MaterialTheme.colorScheme.primary,
+                    activeTrackColor   = MaterialTheme.colorScheme.primary,
+                    inactiveTrackColor = MaterialTheme.colorScheme.outline
                 )
             )
         } else {
@@ -416,7 +402,7 @@ private fun TransportRow(
             Text(
                 text       = "${fmtMs(playheadMs)} / ${fmtMs(totalMs)}",
                 fontSize   = 10.sp,
-                color      = SUBTLE,
+                color      = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontFamily = FontFamily.Monospace
             )
             Row(
@@ -429,7 +415,7 @@ private fun TransportRow(
                     modifier = Modifier
                         .size(38.dp)
                         .clip(CircleShape)
-                        .background(ACCENT)
+                        .background(MaterialTheme.colorScheme.primary)
                         .clickable { onToggle() },
                     contentAlignment = Alignment.Center
                 ) {
@@ -451,7 +437,7 @@ private fun TransportRow(
 @Composable
 private fun TBtn(icon: ImageVector, onClick: () -> Unit) {
     IconButton(onClick = onClick, modifier = Modifier.size(34.dp)) {
-        Icon(icon, contentDescription = null, tint = ON_SURFACE, modifier = Modifier.size(17.dp))
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(17.dp))
     }
 }
 
@@ -464,7 +450,7 @@ private fun ToolChipRow(
     LazyRow(
         modifier              = Modifier
             .fillMaxWidth()
-            .background(SURFACE2)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(horizontal = 10.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding        = PaddingValues(horizontal = 2.dp)
@@ -472,15 +458,16 @@ private fun ToolChipRow(
         items(ClipTool.entries) { tool ->
             val enabled   = !tool.needsClip || selectedClipId != null
             val isActive  = activeTool == tool
-            val chipColor = if (enabled) tool.color else SUBTLE
+            val toolColor = colorForTool(tool)
+            val chipColor = if (enabled) toolColor else MaterialTheme.colorScheme.onSurfaceVariant
 
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(20.dp))
-                    .background(if (isActive) chipColor.copy(alpha = 0.25f) else SURFACE.copy(alpha = 0.6f))
+                    .background(if (isActive) chipColor.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.6f))
                     .border(
                         width = if (isActive) 1.5.dp else 1.dp,
-                        color = if (isActive) chipColor else DIVIDER,
+                        color = if (isActive) chipColor else MaterialTheme.colorScheme.outline,
                         shape = RoundedCornerShape(20.dp)
                     )
                     .clickable(enabled = enabled) { onSelect(tool) }
@@ -500,338 +487,19 @@ private fun ToolChipRow(
     }
 }
 
-private val TRACK_HEIGHT = 48.dp
-private val LABEL_WIDTH  = 44.dp
-private val RULER_HEIGHT = 24.dp
-private val HANDLE_W     = 10.dp
-
-private data class TrackDef(
-    val type:   TrackType,
-    val label:  String,
-    val color:  Color,
-    val height: Dp = TRACK_HEIGHT
-)
-
-private val TRACKS = listOf(
-    TrackDef(TrackType.VIDEO,    "VID", ACCENT),
-    TrackDef(TrackType.AUDIO,    "AUD", GREEN),
-    TrackDef(TrackType.SUBTITLE, "SUB", AMBER, height = 30.dp),
-    TrackDef(TrackType.TITLE,    "TTL", SKY,   height = 30.dp),
-    TrackDef(TrackType.FX,       "FX",  ROSE,  height = 30.dp),
-)
-
-@Composable
-private fun MultiTrackTimeline(
-    clips:           List<TimelineClip>,
-    selectedClipId:  Int?,
-    trimState:       TrimState?,
-    playheadMs:      Long,
-    totalMs:         Long,
-    onClipTap:       (Int) -> Unit,
-    onClipLongPress: (Int) -> Unit,
-    onTrimHead:      (Long) -> Unit,
-    onTrimTail:      (Long) -> Unit,
-    onCommitTrim:    () -> Unit,
-    onCancelTrim:    () -> Unit,
-    modifier:        Modifier = Modifier,
-    pxPerMs:         Float    = 0.18f
-) {
-    val density      = LocalDensity.current
-    val scrollState  = rememberScrollState()
-    val totalWidthDp = with(density) { (totalMs * pxPerMs).toDp().coerceAtLeast(320.dp) }
-    val clipsByTrack = clips.groupBy { it.track }
-
-    Column(modifier = modifier.background(SURFACE3)) {
-        Row(modifier = Modifier.fillMaxWidth()) {
-            Column {
-                Spacer(Modifier.height(RULER_HEIGHT))
-                TRACKS.forEach { track ->
-                    Box(
-                        modifier         = Modifier
-                            .width(LABEL_WIDTH)
-                            .height(track.height)
-                            .background(SURFACE2),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(track.label, fontSize = 8.sp, color = track.color, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.height(1.dp))
-                }
-            }
-
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .horizontalScroll(scrollState)
-            ) {
-                Column(modifier = Modifier.width(totalWidthDp)) {
-                    TimelineRuler(totalMs = totalMs, pxPerMs = pxPerMs, widthDp = totalWidthDp)
-
-                    TRACKS.forEach { track ->
-                        TrackRow(
-                            track           = track,
-                            clips           = clipsByTrack[track.type] ?: emptyList(),
-                            selectedClipId  = selectedClipId,
-                            trimState       = trimState,
-                            pxPerMs         = pxPerMs,
-                            widthDp         = totalWidthDp,
-                            onClipTap       = onClipTap,
-                            onClipLongPress = onClipLongPress,
-                            onTrimHead      = onTrimHead,
-                            onTrimTail      = onTrimTail,
-                            onCommitTrim    = onCommitTrim
-                        )
-                        Spacer(Modifier.height(1.dp))
-                    }
-                }
-
-                val playheadOffsetDp = with(density) { (playheadMs * pxPerMs).toDp() }
-                Box(
-                    modifier = Modifier
-                        .offset(x = playheadOffsetDp)
-                        .width(2.dp)
-                        .fillMaxHeight()
-                        .background(
-                            Brush.verticalGradient(listOf(PLAYHEAD, PLAYHEAD.copy(alpha = 0.25f)))
-                        )
-                )
-                Box(
-                    modifier = Modifier
-                        .offset(x = playheadOffsetDp - 5.dp, y = 0.dp)
-                        .size(10.dp)
-                        .clip(RoundedCornerShape(bottomStart = 3.dp, bottomEnd = 3.dp))
-                        .background(PLAYHEAD)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun TimelineRuler(totalMs: Long, pxPerMs: Float, widthDp: Dp) {
-    Canvas(
-        modifier = Modifier
-            .width(widthDp)
-            .height(RULER_HEIGHT)
-            .background(SURFACE2)
-    ) {
-        val interval = when {
-            pxPerMs > 0.5f -> 1_000L
-            pxPerMs > 0.1f -> 2_000L
-            else           -> 5_000L
-        }
-        var t = 0L
-        while (t <= totalMs + interval) {
-            val x       = t * pxPerMs
-            val isMajor = t % (interval * 5) == 0L
-            drawLine(
-                color       = if (isMajor) SUBTLE.copy(alpha = 0.9f) else SUBTLE.copy(alpha = 0.4f),
-                start       = Offset(x, if (isMajor) 0f else size.height * 0.55f),
-                end         = Offset(x, size.height),
-                strokeWidth = if (isMajor) 1.5f else 0.7f
-            )
-            t += interval
-        }
-    }
-}
-
-@Composable
-private fun TrackRow(
-    track:           TrackDef,
-    clips:           List<TimelineClip>,
-    selectedClipId:  Int?,
-    trimState:       TrimState?,
-    pxPerMs:         Float,
-    widthDp:         Dp,
-    onClipTap:       (Int) -> Unit,
-    onClipLongPress: (Int) -> Unit,
-    onTrimHead:      (Long) -> Unit,
-    onTrimTail:      (Long) -> Unit,
-    onCommitTrim:    () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .width(widthDp)
-            .height(track.height)
-            .background(SURFACE3)
-    ) {
-        Box(modifier = Modifier.fillMaxSize().background(track.color.copy(alpha = 0.03f)))
-
-        clips.forEach { clip ->
-            val isTrimming  = trimState?.clipId == clip.id
-            val displayClip = if (isTrimming) {
-                clip.copy(
-                    trimStartMs = trimState!!.pendingTrimStartMs,
-                    durationMs  = trimState.pendingDurationMs
-                )
-            } else clip
-
-            ClipBlock(
-                clip         = displayClip,
-                trackColor   = track.color,
-                isSelected   = selectedClipId == clip.id,
-                isTrimming   = isTrimming,
-                trackHeight  = track.height,
-                pxPerMs      = pxPerMs,
-                onTap        = { onClipTap(clip.id) },
-                onLongPress  = { onClipLongPress(clip.id) },
-                onTrimHead   = onTrimHead,
-                onTrimTail   = onTrimTail,
-                onCommitTrim = onCommitTrim
-            )
-        }
-    }
-}
-
-@Composable
-private fun ClipBlock(
-    clip:         TimelineClip,
-    trackColor:   Color,
-    isSelected:   Boolean,
-    isTrimming:   Boolean,
-    trackHeight:  Dp,
-    pxPerMs:      Float,
-    onTap:        () -> Unit,
-    onLongPress:  () -> Unit,
-    onTrimHead:   (Long) -> Unit,
-    onTrimTail:   (Long) -> Unit,
-    onCommitTrim: () -> Unit
-) {
-    val density = LocalDensity.current
-    val startDp = with(density) { (clip.startMs * pxPerMs).toDp() }
-    val widthDp = with(density) { (clip.durationMs * pxPerMs).toDp().coerceAtLeast(6.dp) }
-
-    Box(
-        modifier = Modifier
-            .absoluteOffset(x = startDp)
-            .width(widthDp)
-            .height(trackHeight)
-            .padding(vertical = 3.dp, horizontal = 1.dp)
-            .shadow(if (isSelected) 4.dp else 0.dp, RoundedCornerShape(6.dp))
-            .clip(RoundedCornerShape(6.dp))
-            .background(
-                Brush.verticalGradient(
-                    listOf(
-                        trackColor.copy(alpha = if (isSelected) 0.90f else 0.55f),
-                        trackColor.copy(alpha = if (isSelected) 0.70f else 0.35f)
-                    )
-                )
-            )
-            .then(if (isSelected) Modifier.border(1.5.dp, trackColor, RoundedCornerShape(6.dp)) else Modifier)
-            .combinedClickable(onClick = onTap, onLongClick = onLongPress)
-    ) {
-        Text(
-            text     = clip.name,
-            fontSize = 8.sp,
-            color    = Color.White.copy(alpha = 0.9f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(horizontal = if (isTrimming) HANDLE_W + 3.dp else 5.dp)
-        )
-
-        if (isTrimming) {
-            TrimHandle(
-                side         = TrimSide.HEAD,
-                pxPerMs      = pxPerMs,
-                color        = trackColor,
-                onDrag       = onTrimHead,
-                onDragEnd    = onCommitTrim,
-                modifier     = Modifier.align(Alignment.CenterStart)
-            )
-            TrimHandle(
-                side         = TrimSide.TAIL,
-                pxPerMs      = pxPerMs,
-                color        = trackColor,
-                onDrag       = onTrimTail,
-                onDragEnd    = onCommitTrim,
-                modifier     = Modifier.align(Alignment.CenterEnd)
-            )
-        } else {
-            StaticHandle(
-                modifier   = Modifier.align(Alignment.CenterStart),
-                color      = trackColor,
-                isSelected = isSelected,
-                shape      = RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp)
-            )
-            StaticHandle(
-                modifier   = Modifier.align(Alignment.CenterEnd),
-                color      = trackColor,
-                isSelected = isSelected,
-                shape      = RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun StaticHandle(modifier: Modifier, color: Color, isSelected: Boolean, shape: RoundedCornerShape) {
-    Box(
-        modifier = modifier
-            .width(4.dp)
-            .fillMaxHeight()
-            .background(Color.White.copy(alpha = if (isSelected) 0.8f else 0.25f), shape)
-    )
-}
-
-private enum class TrimSide { HEAD, TAIL }
-
-@Composable
-private fun TrimHandle(
-    side:      TrimSide,
-    pxPerMs:   Float,
-    color:     Color,
-    onDrag:    (Long) -> Unit,
-    onDragEnd: () -> Unit,
-    modifier:  Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .width(HANDLE_W)
-            .fillMaxHeight()
-            .background(color.copy(alpha = 0.95f))
-            .pointerInput(side) {
-                detectDragGestures(
-                    onDragEnd    = { onDragEnd() },
-                    onDragCancel = { onDragEnd() },
-                    onDrag       = { change, drag ->
-                        change.consume()
-                        onDrag((drag.x / pxPerMs).toLong())
-                    }
-                )
-            }
-    ) {
-        Column(
-            modifier            = Modifier.align(Alignment.Center),
-            verticalArrangement = Arrangement.spacedBy(3.dp)
-        ) {
-            repeat(3) {
-                Box(
-                    modifier = Modifier
-                        .width(2.dp)
-                        .height(10.dp)
-                        .background(Color.White.copy(alpha = 0.7f))
-                )
-            }
-        }
-    }
-}
-
 @Composable
 private fun ToolPanel(
     tool:      ClipTool,
     state:     EditorUiState,
     vm:        EditorViewModel,
-    onDismiss: () -> Unit,
-    onImport:  () -> Unit
+    onDismiss: () -> Unit
 ) {
     Surface(
         modifier       = Modifier
             .fillMaxWidth()
             .shadow(16.dp, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
         shape          = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-        color          = SURFACE,
+        color          = MaterialTheme.colorScheme.surfaceContainer,
         tonalElevation = 0.dp
     ) {
         Column(
@@ -839,6 +507,7 @@ private fun ToolPanel(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
+            val toolColor = colorForTool(tool)
             Row(
                 modifier              = Modifier.fillMaxWidth(),
                 verticalAlignment     = Alignment.CenterVertically,
@@ -852,20 +521,20 @@ private fun ToolPanel(
                         modifier = Modifier
                             .size(28.dp)
                             .clip(CircleShape)
-                            .background(tool.color.copy(alpha = 0.18f)),
+                            .background(toolColor.copy(alpha = 0.18f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(tool.icon, contentDescription = null, tint = tool.color, modifier = Modifier.size(14.dp))
+                        Icon(tool.icon, contentDescription = null, tint = toolColor, modifier = Modifier.size(14.dp))
                     }
-                    Text(tool.label, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = ON_SURFACE)
+                    Text(tool.label, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                 }
                 IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
-                    Icon(Icons.Outlined.Close, contentDescription = "Dismiss", tint = SUBTLE, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Outlined.Close, contentDescription = "Dismiss", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                 }
             }
 
             Spacer(Modifier.height(10.dp))
-            HorizontalDivider(color = DIVIDER, thickness = 0.5.dp)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
             Spacer(Modifier.height(10.dp))
 
             when (tool) {
@@ -888,7 +557,7 @@ private fun SplitPanel(state: EditorUiState, vm: EditorViewModel, onDismiss: () 
     val clip   = clipId?.let { id -> state.clips.find { it.id == id } }
 
     if (clip == null) {
-        Text("Select a clip on the timeline first", fontSize = 13.sp, color = SUBTLE)
+        Text("Select a clip on the timeline first", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
 
@@ -897,7 +566,7 @@ private fun SplitPanel(state: EditorUiState, vm: EditorViewModel, onDismiss: () 
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(10.dp))
-                .background(SURFACE2)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
                 .padding(12.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -909,13 +578,13 @@ private fun SplitPanel(state: EditorUiState, vm: EditorViewModel, onDismiss: () 
             OutlinedButton(
                 onClick  = onDismiss,
                 modifier = Modifier.weight(1f),
-                border   = BorderStroke(1.dp, DIVIDER),
-                colors   = ButtonDefaults.outlinedButtonColors(contentColor = SUBTLE)
+                border   = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                colors   = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
             ) { Text("Cancel") }
             Button(
                 onClick  = { vm.splitClipAtPlayhead(clipId); onDismiss() },
                 modifier = Modifier.weight(1f),
-                colors   = ButtonDefaults.buttonColors(containerColor = ACCENT)
+                colors   = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
                 Icon(Icons.Outlined.ContentCut, contentDescription = null, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(5.dp))
@@ -935,7 +604,7 @@ private fun TrimPanel(state: EditorUiState, vm: EditorViewModel, onDismiss: () -
     }
 
     if (trimState == null) {
-        Text("Select a clip to trim", fontSize = 13.sp, color = SUBTLE)
+        Text("Select a clip to trim", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
 
@@ -944,7 +613,7 @@ private fun TrimPanel(state: EditorUiState, vm: EditorViewModel, onDismiss: () -
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(10.dp))
-                .background(SURFACE2)
+                .background(MaterialTheme.colorScheme.surfaceVariant)
                 .padding(12.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -955,7 +624,7 @@ private fun TrimPanel(state: EditorUiState, vm: EditorViewModel, onDismiss: () -
         Text(
             "Drag handles on the clip to adjust trim",
             fontSize  = 11.sp,
-            color     = SUBTLE,
+            color     = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             modifier  = Modifier.fillMaxWidth()
         )
@@ -963,8 +632,8 @@ private fun TrimPanel(state: EditorUiState, vm: EditorViewModel, onDismiss: () -
             OutlinedButton(
                 onClick  = { vm.cancelTrim(); onDismiss() },
                 modifier = Modifier.weight(1f),
-                border   = BorderStroke(1.dp, DIVIDER),
-                colors   = ButtonDefaults.outlinedButtonColors(contentColor = SUBTLE)
+                border   = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                colors   = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
             ) {
                 Icon(Icons.Outlined.Close, contentDescription = null, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(5.dp))
@@ -973,7 +642,7 @@ private fun TrimPanel(state: EditorUiState, vm: EditorViewModel, onDismiss: () -
             Button(
                 onClick  = { vm.commitTrim(); onDismiss() },
                 modifier = Modifier.weight(1f),
-                colors   = ButtonDefaults.buttonColors(containerColor = ACCENT)
+                colors   = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
                 Icon(Icons.Outlined.Check, contentDescription = null, modifier = Modifier.size(15.dp))
                 Spacer(Modifier.width(5.dp))
@@ -995,15 +664,15 @@ private fun SpeedPanel(onDismiss: () -> Unit) {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (active) AMBER else SURFACE2)
-                        .border(1.dp, if (active) AMBER else DIVIDER, RoundedCornerShape(8.dp))
+                        .background(if (active) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.surfaceVariant)
+                        .border(1.dp, if (active) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
                         .clickable { speed = p }
                         .padding(horizontal = 14.dp, vertical = 8.dp)
                 ) {
                     Text(
                         "${p}x",
                         fontSize   = 13.sp,
-                        color      = if (active) Color.White else SUBTLE,
+                        color      = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = if (active) FontWeight.Bold else FontWeight.Normal
                     )
                 }
@@ -1013,7 +682,7 @@ private fun SpeedPanel(onDismiss: () -> Unit) {
             Text(
                 text     = "${"%.2f".format(speed)}x",
                 fontSize = 12.sp,
-                color    = ON_SURFACE,
+                color    = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.width(42.dp)
             )
             Slider(
@@ -1022,9 +691,9 @@ private fun SpeedPanel(onDismiss: () -> Unit) {
                 onValueChange = { speed = it },
                 modifier      = Modifier.weight(1f),
                 colors        = SliderDefaults.colors(
-                    thumbColor         = AMBER,
-                    activeTrackColor   = AMBER,
-                    inactiveTrackColor = DIVIDER
+                    thumbColor         = MaterialTheme.colorScheme.secondary,
+                    activeTrackColor   = MaterialTheme.colorScheme.secondary,
+                    inactiveTrackColor = MaterialTheme.colorScheme.outline
                 )
             )
         }
@@ -1032,13 +701,13 @@ private fun SpeedPanel(onDismiss: () -> Unit) {
             OutlinedButton(
                 onClick  = onDismiss,
                 modifier = Modifier.weight(1f),
-                border   = BorderStroke(1.dp, DIVIDER),
-                colors   = ButtonDefaults.outlinedButtonColors(contentColor = SUBTLE)
+                border   = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                colors   = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
             ) { Text("Cancel") }
             Button(
                 onClick  = onDismiss,
                 modifier = Modifier.weight(1f),
-                colors   = ButtonDefaults.buttonColors(containerColor = AMBER)
+                colors   = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
             ) { Text("Apply ${"%.2f".format(speed)}x", fontWeight = FontWeight.SemiBold) }
         }
     }
@@ -1056,32 +725,32 @@ private fun CropPanel(onDismiss: () -> Unit) {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (active) GREEN else SURFACE2)
-                        .border(1.dp, if (active) GREEN else DIVIDER, RoundedCornerShape(8.dp))
+                        .background(if (active) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.surfaceVariant)
+                        .border(1.dp, if (active) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
                         .clickable { selected = r }
                         .padding(horizontal = 14.dp, vertical = 8.dp)
                 ) {
                     Text(
                         r,
                         fontSize   = 12.sp,
-                        color      = if (active) Color.White else SUBTLE,
+                        color      = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = if (active) FontWeight.Bold else FontWeight.Normal
                     )
                 }
             }
         }
-        Text("Crop & aspect ratio applied on export via FFmpeg.", fontSize = 11.sp, color = SUBTLE)
+        Text("Crop & aspect ratio applied on export via FFmpeg.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedButton(
                 onClick  = onDismiss,
                 modifier = Modifier.weight(1f),
-                border   = BorderStroke(1.dp, DIVIDER),
-                colors   = ButtonDefaults.outlinedButtonColors(contentColor = SUBTLE)
+                border   = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                colors   = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
             ) { Text("Cancel") }
             Button(
                 onClick  = onDismiss,
                 modifier = Modifier.weight(1f),
-                colors   = ButtonDefaults.buttonColors(containerColor = GREEN)
+                colors   = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
             ) { Text("Apply $selected", fontWeight = FontWeight.SemiBold) }
         }
     }
@@ -1094,13 +763,13 @@ private fun AudioPanel(onDismiss: () -> Unit) {
     var sfxVol    by remember { mutableFloatStateOf(0.8f) }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        AudioFader("Master",      masterVol, ACCENT) { masterVol = it }
-        AudioFader("Music",       musicVol,  GREEN)  { musicVol  = it }
-        AudioFader("SFX / Voice", sfxVol,   AMBER)  { sfxVol    = it }
+        AudioFader("Master",      masterVol, MaterialTheme.colorScheme.primary) { masterVol = it }
+        AudioFader("Music",       musicVol,  MaterialTheme.colorScheme.tertiary)  { musicVol  = it }
+        AudioFader("SFX / Voice", sfxVol,   MaterialTheme.colorScheme.secondary)  { sfxVol    = it }
         Button(
             onClick  = onDismiss,
             modifier = Modifier.fillMaxWidth(),
-            colors   = ButtonDefaults.buttonColors(containerColor = SKY)
+            colors   = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
         ) { Text("Done", fontWeight = FontWeight.SemiBold) }
     }
 }
@@ -1108,7 +777,7 @@ private fun AudioPanel(onDismiss: () -> Unit) {
 @Composable
 private fun AudioFader(label: String, value: Float, accent: Color, onChange: (Float) -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, fontSize = 11.sp, color = ON_SURFACE, modifier = Modifier.width(70.dp))
+        Text(label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(70.dp))
         Slider(
             value         = value,
             onValueChange = onChange,
@@ -1116,13 +785,13 @@ private fun AudioFader(label: String, value: Float, accent: Color, onChange: (Fl
             colors        = SliderDefaults.colors(
                 thumbColor         = accent,
                 activeTrackColor   = accent,
-                inactiveTrackColor = DIVIDER
+                inactiveTrackColor = MaterialTheme.colorScheme.outline
             )
         )
         Text(
             text      = "${(value * 100).toInt()}%",
             fontSize  = 10.sp,
-            color     = SUBTLE,
+            color     = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier  = Modifier.width(34.dp),
             textAlign = TextAlign.End
         )
@@ -1131,7 +800,8 @@ private fun AudioFader(label: String, value: Float, accent: Color, onChange: (Fl
 
 @Composable
 private fun TextPanel(onDismiss: () -> Unit) {
-    val styles   = listOf("Lower Third" to ACCENT, "Bold Title" to AMBER, "Subtitle" to GREEN, "Watermark" to SUBTLE)
+    val cs = MaterialTheme.colorScheme
+    val styles   = listOf("Lower Third" to cs.primary, "Bold Title" to cs.secondary, "Subtitle" to cs.tertiary, "Watermark" to cs.onSurfaceVariant)
     var selected by remember { mutableStateOf("Lower Third") }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1141,25 +811,25 @@ private fun TextPanel(onDismiss: () -> Unit) {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (active) color.copy(alpha = 0.2f) else SURFACE2)
-                        .border(1.dp, if (active) color else DIVIDER, RoundedCornerShape(8.dp))
+                        .background(if (active) color.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
+                        .border(1.dp, if (active) color else MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
                         .clickable { selected = name }
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
                     Text(
                         name,
                         fontSize   = 12.sp,
-                        color      = if (active) color else SUBTLE,
+                        color      = if (active) color else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = if (active) FontWeight.Bold else FontWeight.Normal
                     )
                 }
             }
         }
-        Text("Text overlays are added to the TITLE track.", fontSize = 11.sp, color = SUBTLE)
+        Text("Text overlays are added to the TITLE track.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Button(
             onClick  = onDismiss,
             modifier = Modifier.fillMaxWidth(),
-            colors   = ButtonDefaults.buttonColors(containerColor = AMBER)
+            colors   = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
         ) { Text("Add \"$selected\"", fontWeight = FontWeight.SemiBold) }
     }
 }
@@ -1167,12 +837,12 @@ private fun TextPanel(onDismiss: () -> Unit) {
 @Composable
 private fun FilterPanel(onDismiss: () -> Unit) {
     val filters = listOf(
-        "None"      to Color(0xFF6C63FF),
-        "Cinematic" to Color(0xFFF59E0B),
+        "None"      to MaterialTheme.colorScheme.primary,
+        "Cinematic" to MaterialTheme.colorScheme.secondary,
         "B&W"       to Color(0xFF888888),
         "Warm"      to Color(0xFFEF4444),
         "Cool"      to Color(0xFF60A5FA),
-        "Vivid"     to Color(0xFF34D399)
+        "Vivid"     to MaterialTheme.colorScheme.tertiary
     )
     var selected by remember { mutableStateOf("None") }
 
@@ -1183,7 +853,7 @@ private fun FilterPanel(onDismiss: () -> Unit) {
                 Column(
                     modifier = Modifier
                         .clip(RoundedCornerShape(10.dp))
-                        .border(1.5.dp, if (active) color else DIVIDER, RoundedCornerShape(10.dp))
+                        .border(1.5.dp, if (active) color else MaterialTheme.colorScheme.outline, RoundedCornerShape(10.dp))
                         .clickable { selected = name }
                         .padding(horizontal = 10.dp, vertical = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -1200,7 +870,7 @@ private fun FilterPanel(onDismiss: () -> Unit) {
                     Text(
                         name,
                         fontSize   = 10.sp,
-                        color      = if (active) color else SUBTLE,
+                        color      = if (active) color else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal
                     )
                 }
@@ -1210,13 +880,13 @@ private fun FilterPanel(onDismiss: () -> Unit) {
             OutlinedButton(
                 onClick  = onDismiss,
                 modifier = Modifier.weight(1f),
-                border   = BorderStroke(1.dp, DIVIDER),
-                colors   = ButtonDefaults.outlinedButtonColors(contentColor = SUBTLE)
+                border   = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                colors   = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
             ) { Text("Cancel") }
             Button(
                 onClick  = onDismiss,
                 modifier = Modifier.weight(1f),
-                colors   = ButtonDefaults.buttonColors(containerColor = ROSE)
+                colors   = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer)
             ) { Text("Apply $selected", fontWeight = FontWeight.SemiBold) }
         }
     }
@@ -1238,12 +908,12 @@ private fun ExportScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(BG)
+            .background(MaterialTheme.colorScheme.surface)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(SURFACE)
+                .background(MaterialTheme.colorScheme.surfaceContainer)
                 .statusBarsPadding()
                 .padding(horizontal = 12.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -1252,16 +922,16 @@ private fun ExportScreen(
                 onClick  = onBack,
                 enabled  = exportState !is ExportUiState.InProgress
             ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = ON_SURFACE)
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurface)
             }
             Spacer(Modifier.width(8.dp))
             Column {
-                Text("Export Video", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = ON_SURFACE)
-                Text(project.title, fontSize = 11.sp, color = SUBTLE, maxLines = 1)
+                Text("Export Video", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Text(project.title, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             }
         }
 
-        HorizontalDivider(color = DIVIDER, thickness = 0.5.dp)
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline, thickness = 0.5.dp)
 
         Column(
             modifier            = Modifier
@@ -1276,7 +946,7 @@ private fun ExportScreen(
                     ExportSection("Resolution") {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             listOf("720p", "1080p", "4K").forEach { r ->
-                                ExportOptionChip(r, resolution == r, ACCENT) { resolution = r }
+                                ExportOptionChip(r, resolution == r, MaterialTheme.colorScheme.primary) { resolution = r }
                             }
                         }
                     }
@@ -1284,7 +954,7 @@ private fun ExportScreen(
                     ExportSection("Frame Rate") {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             listOf(24, 30, 60).forEach { f ->
-                                ExportOptionChip("${f}fps", fps == f, ACCENT) { fps = f }
+                                ExportOptionChip("${f}fps", fps == f, MaterialTheme.colorScheme.primary) { fps = f }
                             }
                         }
                     }
@@ -1307,8 +977,8 @@ private fun ExportScreen(
                         modifier = Modifier.fillMaxWidth().height(52.dp),
                         shape    = RoundedCornerShape(12.dp),
                         colors   = ButtonDefaults.buttonColors(
-                            containerColor         = ACCENT,
-                            disabledContainerColor = SURFACE
+                            containerColor         = MaterialTheme.colorScheme.primary,
+                            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainer
                         )
                     ) {
                         Icon(Icons.Outlined.FileUpload, contentDescription = null, modifier = Modifier.size(20.dp))
@@ -1332,33 +1002,33 @@ private fun ExportScreen(
                             CircularProgressIndicator(
                                 progress    = { exportState.pct / 100f },
                                 modifier    = Modifier.size(96.dp),
-                                color       = ACCENT,
-                                trackColor  = SURFACE,
+                                color       = MaterialTheme.colorScheme.primary,
+                                trackColor  = MaterialTheme.colorScheme.surfaceContainer,
                                 strokeWidth = 8.dp
                             )
                             Text(
                                 "${exportState.pct}%",
                                 fontSize   = 18.sp,
                                 fontWeight = FontWeight.Bold,
-                                color      = ON_SURFACE
+                                color      = MaterialTheme.colorScheme.onSurface
                             )
                         }
-                        Text("Exporting…", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = ON_SURFACE)
+                        Text("Exporting…", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                         Text(
                             "$resolution · ${fps}fps · ${project.aspectRatio}",
                             fontSize = 12.sp,
-                            color    = SUBTLE
+                            color    = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         LinearProgressIndicator(
                             progress   = { exportState.pct / 100f },
                             modifier   = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)),
-                            color      = ACCENT,
-                            trackColor = SURFACE
+                            color      = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceContainer
                         )
                         Text(
                             "Please keep the app open while exporting",
                             fontSize  = 11.sp,
-                            color     = SUBTLE,
+                            color     = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
                         )
                     }
@@ -1376,33 +1046,33 @@ private fun ExportScreen(
                             modifier = Modifier
                                 .size(80.dp)
                                 .clip(CircleShape)
-                                .background(GREEN.copy(alpha = 0.15f))
-                                .border(2.dp, GREEN.copy(alpha = 0.5f), CircleShape),
+                                .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f))
+                                .border(2.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.5f), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = GREEN, modifier = Modifier.size(40.dp))
+                            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary, modifier = Modifier.size(40.dp))
                         }
-                        Text("Export Complete!", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ON_SURFACE)
+                        Text("Export Complete!", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                         Text(
                             exportState.path.substringAfterLast('/'),
                             fontSize  = 11.sp,
-                            color     = SUBTLE,
+                            color     = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
                         )
-                        Text("Saved to Gallery", fontSize = 12.sp, color = GREEN)
+                        Text("Saved to Gallery", fontSize = 12.sp, color = MaterialTheme.colorScheme.tertiary)
                     }
                     Spacer(Modifier.weight(1f))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinedButton(
                             onClick  = { onReset(); onBack() },
                             modifier = Modifier.weight(1f),
-                            border   = BorderStroke(1.dp, DIVIDER),
-                            colors   = ButtonDefaults.outlinedButtonColors(contentColor = ON_SURFACE)
+                            border   = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                            colors   = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
                         ) { Text("Back to Editor") }
                         Button(
                             onClick  = onReset,
                             modifier = Modifier.weight(1f),
-                            colors   = ButtonDefaults.buttonColors(containerColor = ACCENT)
+                            colors   = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                         ) { Text("Export Again", fontWeight = FontWeight.SemiBold) }
                     }
                 }
@@ -1418,17 +1088,17 @@ private fun ExportScreen(
                             modifier = Modifier
                                 .size(80.dp)
                                 .clip(CircleShape)
-                                .background(ERR.copy(alpha = 0.15f))
-                                .border(2.dp, ERR.copy(alpha = 0.5f), CircleShape),
+                                .background(MaterialTheme.colorScheme.error.copy(alpha = 0.15f))
+                                .border(2.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Filled.ErrorOutline, contentDescription = null, tint = ERR, modifier = Modifier.size(40.dp))
+                            Icon(Icons.Filled.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(40.dp))
                         }
-                        Text("Export Failed", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ON_SURFACE)
+                        Text("Export Failed", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                         Text(
                             exportState.msg.take(160),
                             fontSize  = 11.sp,
-                            color     = SUBTLE,
+                            color     = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
                         )
                     }
@@ -1437,13 +1107,13 @@ private fun ExportScreen(
                         OutlinedButton(
                             onClick  = { onReset(); onBack() },
                             modifier = Modifier.weight(1f),
-                            border   = BorderStroke(1.dp, DIVIDER),
-                            colors   = ButtonDefaults.outlinedButtonColors(contentColor = ON_SURFACE)
+                            border   = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                            colors   = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
                         ) { Text("Back to Editor") }
                         Button(
                             onClick  = onReset,
                             modifier = Modifier.weight(1f),
-                            colors   = ButtonDefaults.buttonColors(containerColor = ERR)
+                            colors   = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                         ) { Text("Try Again", fontWeight = FontWeight.SemiBold) }
                     }
                 }
@@ -1458,8 +1128,8 @@ private fun ExportInfoCard(project: Project, videoCount: Int, resolution: String
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(SURFACE)
-            .border(1.dp, DIVIDER, RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
             .padding(14.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment     = Alignment.CenterVertically
@@ -1471,13 +1141,13 @@ private fun ExportInfoCard(project: Project, videoCount: Int, resolution: String
                 .background(project.thumbnailColor)
         )
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(project.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = ON_SURFACE)
+            Text(project.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
             Text(
                 "$videoCount video clip${if (videoCount != 1) "s" else ""}  ·  ${project.aspectRatio}",
                 fontSize = 11.sp,
-                color    = SUBTLE
+                color    = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Text("$resolution @ ${fps}fps", fontSize = 11.sp, color = ACCENT, fontWeight = FontWeight.SemiBold)
+            Text("$resolution @ ${fps}fps", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -1485,7 +1155,7 @@ private fun ExportInfoCard(project: Project, videoCount: Int, resolution: String
 @Composable
 private fun ExportSection(title: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = SUBTLE)
+        Text(title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
         content()
     }
 }
@@ -1495,15 +1165,15 @@ private fun ExportOptionChip(label: String, active: Boolean, accent: Color, onCl
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(if (active) accent else SURFACE)
-            .border(1.dp, if (active) accent else DIVIDER, RoundedCornerShape(8.dp))
+            .background(if (active) accent else MaterialTheme.colorScheme.surfaceContainer)
+            .border(1.dp, if (active) accent else MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
             .clickable { onClick() }
             .padding(horizontal = 16.dp, vertical = 9.dp)
     ) {
         Text(
             label,
             fontSize   = 13.sp,
-            color      = if (active) Color.White else SUBTLE,
+            color      = if (active) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = if (active) FontWeight.Bold else FontWeight.Normal
         )
     }
@@ -1512,9 +1182,9 @@ private fun ExportOptionChip(label: String, active: Boolean, accent: Color, onCl
 @Composable
 private fun InfoCell(label: String, value: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, fontSize = 9.sp, color = SUBTLE)
+        Text(label, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(2.dp))
-        Text(value, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = ON_SURFACE)
+        Text(value, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
     }
 }
 

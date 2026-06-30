@@ -48,6 +48,7 @@ class EditorViewModel(
     private val _uiState = MutableStateFlow(EditorUiState(project = project))
     val uiState: StateFlow<EditorUiState> = _uiState.asStateFlow()
 
+    private var videoClips: List<TimelineClip> = emptyList()
     private var tickerJob: Job? = null
 
     init {
@@ -71,29 +72,37 @@ class EditorViewModel(
     }
 
     private fun rebuildPlayerPlaylist(clips: List<TimelineClip>) {
-        val items = clips
+        val wasPlaying = player.isPlaying
+        val posMs      = getAbsolutePosition()
+
+        videoClips = clips
             .filter { it.track == TrackType.VIDEO && it.sourceUri != null }
             .sortedBy { it.startMs }
-            .map { clip ->
-                MediaItem.Builder()
-                    .setUri(Uri.parse(clip.sourceUri))
-                    .setClippingConfiguration(
-                        MediaItem.ClippingConfiguration.Builder()
-                            .setStartPositionMs(clip.trimStartMs)
-                            .setEndPositionMs(clip.trimStartMs + clip.durationMs)
-                            .build()
-                    )
-                    .build()
-            }
 
-        val wasPlaying = player.isPlaying
-        val posMs      = player.currentPosition
+        val items = videoClips.map { clip ->
+            MediaItem.Builder()
+                .setUri(Uri.parse(clip.sourceUri))
+                .setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder()
+                        .setStartPositionMs(clip.trimStartMs)
+                        .setEndPositionMs(clip.trimStartMs + clip.durationMs)
+                        .build()
+                )
+                .build()
+        }
+
         player.setMediaItems(items)
         player.prepare()
+        seekTo(posMs)
         if (wasPlaying) {
-            player.seekTo(posMs)
             player.play()
         }
+    }
+
+    private fun getAbsolutePosition(): Long {
+        val index = player.currentMediaItemIndex
+        if (index < 0 || index >= videoClips.size) return player.currentPosition
+        return videoClips[index].startMs + player.currentPosition
     }
 
     private fun attachPlayerListener() {
@@ -102,6 +111,18 @@ class EditorViewModel(
                 _uiState.update { it.copy(isPlaying = isPlaying) }
                 if (isPlaying) startTicker() else stopTicker()
             }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int
+            ) {
+                _uiState.update { it.copy(playheadMs = getAbsolutePosition()) }
+            }
+
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                _uiState.update { it.copy(playheadMs = getAbsolutePosition()) }
+            }
         })
     }
 
@@ -109,7 +130,7 @@ class EditorViewModel(
         tickerJob?.cancel()
         tickerJob = viewModelScope.launch {
             while (isActive) {
-                _uiState.update { it.copy(playheadMs = player.currentPosition) }
+                _uiState.update { it.copy(playheadMs = getAbsolutePosition()) }
                 delay(30.milliseconds)
             }
         }
@@ -117,7 +138,7 @@ class EditorViewModel(
 
     private fun stopTicker() {
         tickerJob?.cancel()
-        _uiState.update { it.copy(playheadMs = player.currentPosition) }
+        _uiState.update { it.copy(playheadMs = getAbsolutePosition()) }
     }
 
     fun togglePlayPause() {
@@ -125,8 +146,18 @@ class EditorViewModel(
     }
 
     fun seekTo(positionMs: Long) {
-        player.seekTo(positionMs.coerceAtLeast(0))
-        _uiState.update { it.copy(playheadMs = positionMs) }
+        val clippedPos = positionMs.coerceIn(0L, _uiState.value.totalDurationMs)
+        val clipIndex = videoClips.indexOfLast { it.startMs <= clippedPos }
+        if (clipIndex != -1) {
+            val clip = videoClips[clipIndex]
+            val relativePos = clippedPos - clip.startMs
+            player.seekTo(clipIndex, relativePos)
+        } else if (videoClips.isNotEmpty()) {
+            player.seekTo(0, 0)
+        } else {
+            player.seekTo(clippedPos)
+        }
+        _uiState.update { it.copy(playheadMs = clippedPos) }
     }
 
     fun skipToStart() {
@@ -301,7 +332,6 @@ class EditorViewModel(
     private fun generateClipId(): Int = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
 
     override fun onCleared() {
-        super.onCleared()
         tickerJob?.cancel()
         player.release()
     }

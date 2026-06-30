@@ -1,5 +1,6 @@
 package com.android.fluxcut
 
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -11,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -50,12 +52,15 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.Image
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.util.UnstableApi
 import com.android.fluxcut.ui.theme.FluxcutTheme
 import kotlinx.coroutines.launch
+import java.util.Locale
 import kotlin.random.Random
 
 class MainActivity : ComponentActivity() {
 
+    @UnstableApi
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -129,9 +134,7 @@ class MainActivity : ComponentActivity() {
                                     onProjectClick       = { project ->
                                         editorProject = project; navigateTo("editor")
                                     },
-                                    onEditorClick        = {},
                                     onViewAllClick       = { navigateTo("all_projects") },
-                                    onProfileClick       = {},
                                     onDeleteProject      = { project ->
                                         scope.launch { repository.delete(project) }
                                     }
@@ -164,7 +167,52 @@ class MainActivity : ComponentActivity() {
                                     EditorScreen(project = project, onBack = { navigateBack() })
                                 }
                                 "settings"       -> SettingsScreen(navigateTo = { navigateBack() })
-                                "capture"        -> CaptureScreen(onBackClick = { navigateBack() })
+                                "capture"        -> CaptureScreen(
+                                    onBackClick = { navigateBack() },
+                                    onMediaCaptured = { media ->
+                                        scope.launch {
+                                            val targetProject = editorProject ?: projectList.firstOrNull()
+                                            if (targetProject != null) {
+                                                val existing = repository.getProjectWithClips(targetProject.id)
+                                                val clips = existing?.clips?.map { it.toTimelineClip() } ?: emptyList()
+                                                val nextId = (clips.maxOfOrNull { it.id } ?: 0) + 1
+                                                val startMs = clips.maxOfOrNull { it.startMs + it.durationMs } ?: 0L
+                                                
+                                                val newClip = media.toTimelineClip(
+                                                    id = nextId,
+                                                    startMs = startMs,
+                                                    videoColor = Color(0xFF6C63FF),
+                                                    audioColor = Color(0xFF34D399)
+                                                )
+                                                
+                                                repository.saveTimeline(targetProject, clips + newClip)
+                                                editorProject = targetProject
+                                                navigateTo("editor")
+                                            } else {
+                                                // Create a new project if none exists
+                                                val newProject = Project(
+                                                    id = Random.nextInt(100, 100000),
+                                                    title = "Captured Project",
+                                                    date = "Jun 25, 2026",
+                                                    duration = "00:00",
+                                                    resolution = "1080p",
+                                                    aspectRatio = if (media.width > media.height) "16:9" else "9:16",
+                                                    fps = 30,
+                                                    thumbnailColor = Color(0xFF3B82F6)
+                                                )
+                                                val newClip = media.toTimelineClip(
+                                                    id = 1,
+                                                    startMs = 0L,
+                                                    videoColor = Color(0xFF6C63FF),
+                                                    audioColor = Color(0xFF34D399)
+                                                )
+                                                repository.saveTimeline(newProject, listOf(newClip))
+                                                editorProject = newProject
+                                                navigateTo("editor")
+                                            }
+                                        }
+                                    }
+                                )
                                 "docs"           -> DocsScreen(onBackClick = { navigateBack() })
                                 "edit_profile"   -> EditProfileScreen(onBackClick = { navigateBack() })
                             }
@@ -183,9 +231,7 @@ class MainActivity : ComponentActivity() {
         onCaptureClick: () -> Unit,
         onDocsClick: () -> Unit,
         onProjectClick: (Project) -> Unit,
-        onEditorClick: () -> Unit,
         onViewAllClick: () -> Unit,
-        onProfileClick: () -> Unit,
         onDeleteProject: (Project) -> Unit
     ) {
         val context = LocalContext.current
@@ -228,7 +274,6 @@ class MainActivity : ComponentActivity() {
                         surface          = surface,
                         accent           = accent,
                         onSurface        = onSurface,
-                        subtle           = subtle,
                         onCaptureClick   = onCaptureClick,
                         onClearCacheClick = {
                             val cleared = CacheManager.clearAllCache(context)
@@ -459,20 +504,26 @@ class MainActivity : ComponentActivity() {
     fun QuickActionsRow(
         surface: Color,
         onSurface: Color,
-        subtle: Color,
         accent: Color,
         onCaptureClick: () -> Unit,
         onClearCacheClick: () -> Unit,
         onDocsClick: () -> Unit
     ) {
         val context   = LocalContext.current
+        val hasCamera = remember { context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY) }
         val cacheSize = remember { mutableStateOf(CacheManager.getCacheSize(context)) }
-        val actions   = listOf(
-            QuickAction(Icons.Outlined.EmergencyRecording, "Capture"),
-            QuickAction(Icons.Outlined.MusicNote,          "Extract Audio"),
-            QuickAction(Icons.Outlined.DeleteSweep,        "Clear Cache", cacheSize.value),
-            QuickAction(Icons.AutoMirrored.Outlined.MenuBook, "Docs"),
-        )
+
+        val actions = remember(hasCamera, cacheSize.value) {
+            buildList {
+                if (hasCamera) {
+                    add(QuickAction(Icons.Outlined.EmergencyRecording, "Capture"))
+                }
+                add(QuickAction(Icons.Outlined.MusicNote, "Extract Audio"))
+                add(QuickAction(Icons.Outlined.DeleteSweep, "Clear Cache", cacheSize.value))
+                add(QuickAction(Icons.AutoMirrored.Outlined.MenuBook, "Docs"))
+            }
+        }
+
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             actions.forEach { action ->
                 Box(modifier = Modifier.weight(1f)) {
@@ -644,7 +695,7 @@ class MainActivity : ComponentActivity() {
             listOf(
                 "Untitled Masterpiece", "Delete Me Later", "Low Budget Blockbuster",
                 "Oscar Winner 2026",    "Cat Video #42",   "Epic Montage",
-                "Hollywood Budget \$0", "Coffee Powered Edit",
+                "Hollywood Budget $0", "Coffee Powered Edit",
                 "Clickbait Thumbnail",  "Final_Final_v2_Real", "This One Is Final"
             )
         }
@@ -769,19 +820,39 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    enum class CaptureMode { VIDEO, PHOTO }
+    enum class CaptureRatio(val ratio: Int, val label: String) {
+        R_16_9(androidx.camera.core.AspectRatio.RATIO_16_9, "16:9"),
+        R_4_3(androidx.camera.core.AspectRatio.RATIO_4_3, "4:3")
+    }
+
     @Composable
-    fun CaptureScreen(onBackClick: () -> Unit) {
+    fun CaptureScreen(onBackClick: () -> Unit, onMediaCaptured: (ImportedMedia) -> Unit) {
         val context        = LocalContext.current
         val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+        val scope          = rememberCoroutineScope()
 
         var hasPermissions by remember { mutableStateOf(false) }
         var isRecording    by remember { mutableStateOf(false) }
         var recordedTime   by remember { mutableStateOf("00:00") }
         var zoomRatio      by remember { mutableFloatStateOf(1f) }
         var cameraControl  by remember { mutableStateOf<androidx.camera.core.CameraControl?>(null) }
+        var lensFacing     by remember { mutableIntStateOf(androidx.camera.core.CameraSelector.LENS_FACING_BACK) }
+        var captureMode    by remember { mutableStateOf(CaptureMode.VIDEO) }
+        var captureRatio   by remember { mutableStateOf(CaptureRatio.R_16_9) }
 
         val videoCaptureState   = remember { mutableStateOf<androidx.camera.video.VideoCapture<androidx.camera.video.Recorder>?>(null) }
+        val imageCaptureState   = remember { mutableStateOf<androidx.camera.core.ImageCapture?>(null) }
         val activeRecordingState = remember { mutableStateOf<androidx.camera.video.Recording?>(null) }
+        
+        var pendingMedia by remember { mutableStateOf<ImportedMedia?>(null) }
+        
+        val previewView = remember { 
+            androidx.camera.view.PreviewView(context).apply {
+                scaleType = androidx.camera.view.PreviewView.ScaleType.FIT_CENTER
+                implementationMode = androidx.camera.view.PreviewView.ImplementationMode.COMPATIBLE
+            }
+        }
 
         val permissionLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -797,36 +868,63 @@ class MainActivity : ComponentActivity() {
             )
         }
 
+        LaunchedEffect(hasPermissions, lensFacing, captureRatio) {
+            if (!hasPermissions) return@LaunchedEffect
+            
+            val cameraProviderFuture = androidx.camera.lifecycle.ProcessCameraProvider.getInstance(context)
+            cameraProviderFuture.addListener({
+                val cameraProvider = cameraProviderFuture.get()
+                
+                val resolutionSelector = androidx.camera.core.resolutionselector.ResolutionSelector.Builder()
+                    .setAspectRatioStrategy(
+                        androidx.camera.core.resolutionselector.AspectRatioStrategy(
+                            captureRatio.ratio,
+                            androidx.camera.core.resolutionselector.AspectRatioStrategy.FALLBACK_RULE_AUTO
+                        )
+                    )
+                    .build()
+
+                val preview = androidx.camera.core.Preview.Builder()
+                    .setResolutionSelector(resolutionSelector)
+                    .build().also {
+                        it.surfaceProvider = previewView.surfaceProvider
+                    }
+
+                val recorder = androidx.camera.video.Recorder.Builder()
+                    .setQualitySelector(
+                        androidx.camera.video.QualitySelector.from(
+                            if (captureRatio == CaptureRatio.R_16_9) androidx.camera.video.Quality.HIGHEST 
+                            else androidx.camera.video.Quality.SD
+                        )
+                    )
+                    .build()
+                val videoCapture = androidx.camera.video.VideoCapture.withOutput(recorder)
+                videoCaptureState.value = videoCapture
+
+                val imageCapture = androidx.camera.core.ImageCapture.Builder()
+                    .setResolutionSelector(resolutionSelector)
+                    .setCaptureMode(androidx.camera.core.ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .build()
+                imageCaptureState.value = imageCapture
+
+                try {
+                    cameraProvider.unbindAll()
+                    val camera = cameraProvider.bindToLifecycle(
+                        lifecycleOwner,
+                        androidx.camera.core.CameraSelector.Builder().requireLensFacing(lensFacing).build(),
+                        preview, videoCapture, imageCapture
+                    )
+                    cameraControl = camera.cameraControl
+                } catch (e: Exception) {
+                    android.util.Log.e("FluxCutCamera", "Binding failed", e)
+                }
+            }, androidx.core.content.ContextCompat.getMainExecutor(context))
+        }
+
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
             if (hasPermissions) {
                 AndroidView(
-                    factory = { ctx ->
-                        val previewView        = androidx.camera.view.PreviewView(ctx)
-                        val cameraProviderFuture = androidx.camera.lifecycle.ProcessCameraProvider.getInstance(ctx)
-                        cameraProviderFuture.addListener({
-                            val cameraProvider = cameraProviderFuture.get()
-                            val preview        = androidx.camera.core.Preview.Builder().build().also {
-                                it.setSurfaceProvider(previewView.surfaceProvider)
-                            }
-                            val recorder      = androidx.camera.video.Recorder.Builder()
-                                .setQualitySelector(androidx.camera.video.QualitySelector.from(androidx.camera.video.Quality.HIGHEST))
-                                .build()
-                            val videoCapture  = androidx.camera.video.VideoCapture.withOutput(recorder)
-                            videoCaptureState.value = videoCapture
-                            try {
-                                cameraProvider.unbindAll()
-                                val camera = cameraProvider.bindToLifecycle(
-                                    lifecycleOwner,
-                                    androidx.camera.core.CameraSelector.DEFAULT_BACK_CAMERA,
-                                    preview, videoCapture
-                                )
-                                cameraControl = camera.cameraControl
-                            } catch (e: Exception) {
-                                android.util.Log.e("FluxCutCamera", "Use case binding failed", e)
-                            }
-                        }, androidx.core.content.ContextCompat.getMainExecutor(ctx))
-                        previewView
-                    },
+                    factory = { previewView },
                     modifier = Modifier.fillMaxSize().pointerInput(Unit) {
                         detectTransformGestures { _, _, zoomMultiplier, _ ->
                             zoomRatio = (zoomRatio * zoomMultiplier).coerceIn(1f, 5f)
@@ -835,23 +933,36 @@ class MainActivity : ComponentActivity() {
                     }
                 )
 
+                // Aspect Ratio Overlay Mask
+                if (captureRatio == CaptureRatio.R_4_3) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        // 4:3 is 0.75 ratio. Height is size.height. Width should be height * 0.75.
+                        // We'll just mask the sides if it's 16:9 screen.
+                        // This is a bit complex for dynamic layout, but for now we'll just skip masking 
+                        // and let the preview fill.
+                    }
+                }
+
+                // Top Controls
                 Row(
-                    modifier              = Modifier
+                    modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.TopCenter)
                         .padding(top = 48.dp, start = 20.dp, end = 20.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment     = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        Icons.Outlined.Close, contentDescription = "Close Camera",
-                        tint     = Color.White,
-                        modifier = Modifier.size(28.dp).clickable { onBackClick() }
-                    )
+                    IconButton(
+                        onClick = onBackClick,
+                        modifier = Modifier.background(Color.Black.copy(0.3f), CircleShape)
+                    ) {
+                        Icon(Icons.Outlined.Close, contentDescription = "Close", tint = Color.White)
+                    }
+
                     if (isRecording) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier          = Modifier
+                            modifier = Modifier
                                 .background(Color.Black.copy(0.5f), RoundedCornerShape(8.dp))
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
@@ -859,60 +970,153 @@ class MainActivity : ComponentActivity() {
                             Spacer(Modifier.width(8.dp))
                             Text(recordedTime, color = Color.White, fontWeight = FontWeight.Bold)
                         }
-                    }
-                    Spacer(modifier = Modifier.size(28.dp))
-                }
-
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 60.dp)
-                        .size(72.dp)
-                        .clip(CircleShape)
-                        .border(4.dp, Color.White, CircleShape)
-                        .padding(8.dp)
-                        .clip(CircleShape)
-                        .background(if (isRecording) Color.DarkGray else Color.Red)
-                        .clickable {
-                            val videoCapture     = videoCaptureState.value ?: return@clickable
-                            val currentRecording = activeRecordingState.value
-                            if (currentRecording != null) {
-                                currentRecording.stop()
-                                activeRecordingState.value = null
-                                isRecording  = false
-                                recordedTime = "00:00"
-                            } else {
-                                val file          = java.io.File(context.filesDir, "FluxCut_${System.currentTimeMillis()}.mp4")
-                                val outputOptions = androidx.camera.video.FileOutputOptions.Builder(file).build()
-                                if (androidx.core.app.ActivityCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) ==
-                                    android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                    activeRecordingState.value = videoCapture.output
-                                        .prepareRecording(context, outputOptions)
-                                        .withAudioEnabled()
-                                        .start(androidx.core.content.ContextCompat.getMainExecutor(context)) { event ->
-                                            when (event) {
-                                                is androidx.camera.video.VideoRecordEvent.Start    -> isRecording = true
-                                                is androidx.camera.video.VideoRecordEvent.Status   -> {
-                                                    val totalSec = java.util.concurrent.TimeUnit.NANOSECONDS.toSeconds(event.recordingStats.recordedDurationNanos)
-                                                    val mins = totalSec / 60
-                                                    val secs = totalSec % 60
-                                                    recordedTime = String.format("%02d:%02d", mins, secs)
-                                                }
-                                                is androidx.camera.video.VideoRecordEvent.Finalize -> {
-                                                    isRecording = false; recordedTime = "00:00"
-                                                    if (!event.hasError()) {
-                                                        Toast.makeText(context, "Saved to App Files", Toast.LENGTH_SHORT).show()
-                                                    } else {
-                                                        activeRecordingState.value?.close()
-                                                        activeRecordingState.value = null
-                                                    }
-                                                }
-                                            }
-                                        }
+                    } else {
+                        // Mode Switcher
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(Color.Black.copy(0.4f))
+                                .padding(4.dp)
+                        ) {
+                            CaptureMode.entries.forEach { mode ->
+                                val label = if (mode == CaptureMode.VIDEO) "Video" else "Photo"
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(if (captureMode == mode) Color.White.copy(0.2f) else Color.Transparent)
+                                        .clickable { captureMode = mode }
+                                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                                ) {
+                                    Text(label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
-                )
+                    }
+                    
+                    // Ratio Switcher
+                    if (!isRecording) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.Black.copy(0.3f))
+                                .clickable {
+                                    captureRatio = if (captureRatio == CaptureRatio.R_16_9) CaptureRatio.R_4_3 else CaptureRatio.R_16_9
+                                }
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text(captureRatio.label, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.size(48.dp))
+                    }
+                }
+
+                // Bottom Controls
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 60.dp)
+                ) {
+                    // Flip Camera
+                    if (!isRecording) {
+                        IconButton(
+                            onClick = {
+                                lensFacing = if (lensFacing == androidx.camera.core.CameraSelector.LENS_FACING_BACK) {
+                                    androidx.camera.core.CameraSelector.LENS_FACING_FRONT
+                                } else {
+                                    androidx.camera.core.CameraSelector.LENS_FACING_BACK
+                                }
+                            },
+                            modifier = Modifier
+                                .align(Alignment.CenterStart)
+                                .padding(start = 40.dp)
+                                .size(48.dp)
+                                .background(Color.Black.copy(0.3f), CircleShape)
+                        ) {
+                            Icon(Icons.Outlined.FlipCameraAndroid, contentDescription = "Flip Camera", tint = Color.White)
+                        }
+                    }
+
+                    // Capture Button
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .border(4.dp, Color.White, CircleShape)
+                            .padding(8.dp)
+                            .clip(CircleShape)
+                            .background(if (isRecording) Color.White else Color.Red)
+                            .clickable {
+                                if (captureMode == CaptureMode.VIDEO) {
+                                    val videoCapture = videoCaptureState.value ?: return@clickable
+                                    val currentRecording = activeRecordingState.value
+                                    if (currentRecording != null) {
+                                        currentRecording.stop()
+                                        activeRecordingState.value = null
+                                    } else {
+                                        val file = java.io.File(context.filesDir, "FluxCut_${System.currentTimeMillis()}.mp4")
+                                        val outputOptions = androidx.camera.video.FileOutputOptions.Builder(file).build()
+                                        if (androidx.core.app.ActivityCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) ==
+                                            PackageManager.PERMISSION_GRANTED) {
+                                            activeRecordingState.value = videoCapture.output
+                                                .prepareRecording(context, outputOptions)
+                                                .withAudioEnabled()
+                                                .start(androidx.core.content.ContextCompat.getMainExecutor(context)) { event ->
+                                                    when (event) {
+                                                        is androidx.camera.video.VideoRecordEvent.Start -> isRecording = true
+                                                        is androidx.camera.video.VideoRecordEvent.Status -> {
+                                                            val totalSec = java.util.concurrent.TimeUnit.NANOSECONDS.toSeconds(event.recordingStats.recordedDurationNanos)
+                                                            val mins = totalSec / 60
+                                                            val secs = totalSec % 60
+                                                            recordedTime = String.format(Locale.getDefault(), "%02d:%02d", mins, secs)
+                                                        }
+                                                        is androidx.camera.video.VideoRecordEvent.Finalize -> {
+                                                            isRecording = false; recordedTime = "00:00"
+                                                            if (!event.hasError()) {
+                                                                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                                                    val media = extractMediaMetadata(context, android.net.Uri.fromFile(file))
+                                                                    scope.launch(kotlinx.coroutines.Dispatchers.Main) { pendingMedia = media }
+                                                                }
+                                                            } else {
+                                                                activeRecordingState.value?.close()
+                                                                activeRecordingState.value = null
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                        }
+                                    }
+                                } else {
+                                    // PHOTO MODE
+                                    val imageCapture = imageCaptureState.value ?: return@clickable
+                                    val file = java.io.File(context.filesDir, "FluxCut_IMG_${System.currentTimeMillis()}.jpg")
+                                    val outputOptions = androidx.camera.core.ImageCapture.OutputFileOptions.Builder(file).build()
+                                    
+                                    imageCapture.takePicture(
+                                        outputOptions,
+                                        androidx.core.content.ContextCompat.getMainExecutor(context),
+                                        object : androidx.camera.core.ImageCapture.OnImageSavedCallback {
+                                            override fun onImageSaved(output: androidx.camera.core.ImageCapture.OutputFileResults) {
+                                                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                                    try {
+                                                        val media = extractMediaMetadata(context, android.net.Uri.fromFile(file))
+                                                        scope.launch(kotlinx.coroutines.Dispatchers.Main) { pendingMedia = media }
+                                                    } catch (e: Exception) {
+                                                        android.util.Log.e("FluxCutCamera", "Metadata extraction failed", e)
+                                                    }
+                                                }
+                                            }
+                                            override fun onError(exc: androidx.camera.core.ImageCaptureException) {
+                                                android.util.Log.e("FluxCutCamera", "Photo capture failed: ${exc.message}", exc)
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                    )
+                }
             } else {
                 Column(
                     modifier            = Modifier.align(Alignment.Center),
@@ -927,8 +1131,118 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+            
+            // Confirmation Overlay
+            pendingMedia?.let { media ->
+                CaptureConfirmationOverlay(
+                    media = media,
+                    onConfirm = { onMediaCaptured(media); pendingMedia = null },
+                    onDismiss = { pendingMedia = null }
+                )
+            }
         }
     }
+
+    @Composable
+    fun CaptureConfirmationOverlay(
+        media: ImportedMedia,
+        onConfirm: () -> Unit,
+        onDismiss: () -> Unit
+    ) {
+        val context = LocalContext.current
+        val scope = rememberCoroutineScope()
+        var videoThumbnail by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+        
+        LaunchedEffect(media) {
+            if (media.mimeType.startsWith("video")) {
+                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    val retriever = android.media.MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(context, media.uri)
+                        videoThumbnail = retriever.getFrameAtTime(0)
+                    } catch (e: Exception) {
+                        android.util.Log.e("FluxCutCapture", "Thumbnail failed", e)
+                    } finally {
+                        retriever.release()
+                    }
+                }
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(0.9f))
+                .clickable(enabled = false) {},
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color(0xFF1A1A2E))
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Import Captured Media?",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "Add this ${if (media.mimeType.startsWith("image")) "photo" else "video"} to your timeline.",
+                    fontSize = 13.sp,
+                    color = Color.Gray,
+                    textAlign = TextAlign.Center
+                )
+                
+                Spacer(Modifier.height(24.dp))
+                
+                // Preview
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(if (media.width > 0 && media.height > 0) media.width.toFloat() / media.height else 16/9f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.Black)
+                ) {
+                    coil3.compose.AsyncImage(
+                        model = videoThumbnail ?: media.uri,
+                        contentDescription = "Preview",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+
+                Spacer(Modifier.height(24.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color.Gray.copy(0.5f))
+                    ) {
+                        Text("Retake", color = Color.White)
+                    }
+                    Button(
+                        onClick = onConfirm,
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6C63FF))
+                    ) {
+                        Text("Import", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+
 
     @Composable
     fun DocsScreen(onBackClick: () -> Unit) {

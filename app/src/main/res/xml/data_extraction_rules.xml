@@ -3,9 +3,6 @@
     <cloud-backup>
         <include domain="database" path="." />
         <include domain="sharedpref" path="." />
-
-        <exclude domain="file" path="video_cache" />
-        <exclude domain="external" path="." />
     </cloud-backup>
 
     <device-transfer>

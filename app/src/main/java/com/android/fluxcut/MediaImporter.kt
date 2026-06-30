@@ -23,6 +23,9 @@ data class ImportedMedia(
 
 fun extractMediaMetadata(context: Context, uri: Uri): ImportedMedia {
     val retriever = MediaMetadataRetriever()
+    val isImage = context.contentResolver.getType(uri)?.startsWith("image") == true || 
+                  uri.toString().endsWith(".jpg") || uri.toString().endsWith(".png") || uri.toString().endsWith(".jpeg")
+    
     return try {
         retriever.setDataSource(context, uri)
 
@@ -30,23 +33,37 @@ fun extractMediaMetadata(context: Context, uri: Uri): ImportedMedia {
             .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
             ?.toLongOrNull() ?: 0L
 
-        val width = retriever
-            .extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
-            ?.toIntOrNull() ?: 0
-
-        val height = retriever
-            .extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
-            ?.toIntOrNull() ?: 0
-
         val mimeType = retriever
             .extractMetadata(MediaMetadataRetriever.METADATA_KEY_MIMETYPE)
-            ?: "video/mp4"
+            ?: (if (isImage) "image/jpeg" else "video/mp4")
+
+        var width = retriever
+            .extractMetadata(if (isImage) MediaMetadataRetriever.METADATA_KEY_IMAGE_WIDTH else MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+            ?.toIntOrNull() ?: 0
+
+        var height = retriever
+            .extractMetadata(if (isImage) MediaMetadataRetriever.METADATA_KEY_IMAGE_HEIGHT else MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+            ?.toIntOrNull() ?: 0
+            
+        // Fallback for image dimensions if retriever fails
+        if (isImage && (width == 0 || height == 0)) {
+            context.contentResolver.openInputStream(uri)?.use { stream ->
+                val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeStream(stream, null, options)
+                width = options.outWidth
+                height = options.outHeight
+            }
+        }
 
         val fileName = uri.lastPathSegment
             ?.substringAfterLast('/')
             ?: "clip_${System.currentTimeMillis()}"
 
         ImportedMedia(uri, fileName, durationMs, width, height, mimeType)
+    } catch (e: Exception) {
+        // Ultimate fallback for metadata extraction failure
+        val fileName = uri.lastPathSegment ?: "media_${System.currentTimeMillis()}"
+        ImportedMedia(uri, fileName, 0L, 1920, 1080, if (isImage) "image/jpeg" else "video/mp4")
     } finally {
         retriever.release()
     }
@@ -59,13 +76,14 @@ fun ImportedMedia.toTimelineClip(
     audioColor: Color
 ): TimelineClip {
     val isVideo = mimeType.startsWith("video")
+    val isImage = mimeType.startsWith("image")
     return TimelineClip(
         id         = id,
         name       = fileName.substringBeforeLast('.'),
-        track      = if (isVideo) TrackType.VIDEO else TrackType.AUDIO,
+        track      = if (isVideo || isImage) TrackType.VIDEO else TrackType.AUDIO,
         startMs    = startMs,
         durationMs = if (durationMs > 0L) durationMs else 5000L,
-        color      = if (isVideo) videoColor else audioColor,
+        color      = if (isVideo || isImage) videoColor else audioColor,
         hasAudio   = isVideo,
         sourceUri  = uri.toString()
     )

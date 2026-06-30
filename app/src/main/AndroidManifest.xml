@@ -1,17 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+
+    <!-- ── Storage ─────────────────────────────────────────────────────────── -->
+    <!-- API ≤ 28: need WRITE to save exported video to Movies/ -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <!-- API ≤ 32: legacy read permission -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"
+    <!-- API 33+: granular media permissions -->
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_IMAGES"
         tools:ignore="PhotoAndVideoPolicy" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_VIDEO"
         tools:ignore="PhotoAndVideoPolicy" />
-    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"
+    <uses-permission
+        android:name="android.permission.READ_MEDIA_AUDIO"
         tools:ignore="PhotoAndVideoPolicy" />
+    <!-- API 34+: partial media access -->
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
-    <uses-feature android:name="android.hardware.camera" android:required="true" />
-    <uses-feature android:name="android.hardware.microphone" android:required="true" />
+
+    <!-- ── Camera / Mic ────────────────────────────────────────────────────── -->
+    <uses-feature android:name="android.hardware.camera"      android:required="false" />
+    <uses-feature android:name="android.hardware.microphone"  android:required="false" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
@@ -23,7 +38,9 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Fluxcut">
+        android:theme="@style/Theme.Fluxcut"
+        android:largeHeap="true">
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -31,7 +48,6 @@
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>

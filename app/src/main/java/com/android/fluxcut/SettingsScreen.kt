@@ -1,28 +1,16 @@
 package com.android.fluxcut
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,9 +18,9 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -95,6 +83,7 @@ data class SettingsSection(
 @Composable
 fun SettingsScreen(navigateTo: () -> Unit) {
     val dark = isSystemInDarkTheme()
+    val locale = LocalConfiguration.current.locales[0]
 
     val bg        = if (dark) Color(0xFF0A0A0F) else Color(0xFFF5F5F7)
     val surface   = if (dark) Color(0xFF1A1A2E) else Color(0xFFFFFFFF)
@@ -339,7 +328,7 @@ fun SettingsScreen(navigateTo: () -> Unit) {
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            section.sectionTitle.uppercase(),
+                            section.sectionTitle.uppercase(locale),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = section.accentColor,
